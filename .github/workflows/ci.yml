@@ -1,0 +1,153 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  TURBO_TELEMETRY_DISABLED: "1"
+
+jobs:
+  quality:
+    name: Lint · Typecheck · Test · Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        # Version comes from the root package.json "packageManager" field.
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint, typecheck, unit tests
+        run: pnpm turbo run lint typecheck test
+
+      - name: Build web
+        run: pnpm --filter @vaanidesk/web build
+        env:
+          # Build-time only — real secrets come from the deploy platform.
+          AUTH_SECRET: ci-build-placeholder-secret-0000
+
+  integration:
+    name: Integration tests (Postgres)
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Booking service against real Postgres (testcontainers)
+        run: pnpm --filter @vaanidesk/api test:integration
+
+  e2e:
+    name: Playwright happy paths
+    runs-on: ubuntu-latest
+    needs: quality
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vaanidesk
+          POSTGRES_PASSWORD: vaanidesk
+          POSTGRES_DB: vaanidesk
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U vaanidesk" --health-interval 5s
+          --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgres://vaanidesk:vaanidesk@localhost:5432/vaanidesk
+      REDIS_URL: redis://localhost:6379
+      AUTH_SECRET: e2e-ci-secret-not-real-000000000000
+      INTERNAL_SERVICE_SECRET: e2e-ci-internal-secret-000000000000
+      WEBHOOK_SIGNATURE_MODE: log
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Apply migrations
+        run: pnpm db:migrate
+      - name: Install Chromium
+        run: pnpm --filter @vaanidesk/web exec playwright install --with-deps chromium
+      - name: Run e2e suite (boots api + web via Playwright webServer)
+        run: pnpm --filter @vaanidesk/web e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report
+          retention-days: 7
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level high
+
+  evals:
+    name: Agent evals (gate vs main)
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Check eval secrets
+        id: secrets
+        run: |
+          if [ -n "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::ANTHROPIC_API_KEY not configured — eval gate skipped."
+          fi
+
+      - name: Run scenario suite with pass-rate gate
+        if: steps.secrets.outputs.available == 'true'
+        run: >
+          pnpm --filter @vaanidesk/evals run --
+          --trigger ci --gate
+          --git-sha "$GITHUB_SHA"
+          --git-branch "${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Neon CI branch database — stores runs/results for the baseline gate.
+          DATABASE_URL: ${{ secrets.EVALS_DATABASE_URL }}
+          AGENT_MODEL: claude-haiku-4-5-20251001
+
+# The nightly full-suite eval run lives in nightly.yml.
