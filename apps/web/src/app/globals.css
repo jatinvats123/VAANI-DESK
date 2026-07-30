@@ -1,0 +1,129 @@
+@import "tailwindcss";
+
+/**
+ * VaaniDesk design tokens. Semantic variables switch with the system color
+ * scheme; Tailwind utilities reference them via @theme inline, so every
+ * component is dark-mode correct by construction. Accent: saffron — warm,
+ * confident, unmistakably not another indigo SaaS.
+ */
+
+:root {
+  --bg: #faf9f7;
+  --surface: #ffffff;
+  --surface-2: #f3f1ed;
+  --border: #e5e1da;
+  --ink: #1c1917;
+  --ink-muted: #6b6560;
+  --ink-faint: #a39d96;
+  --accent: #d97706;
+  --accent-strong: #b45309;
+  --accent-soft: #fef3e2;
+  --positive: #15803d;
+  --positive-soft: #e8f5ec;
+  --negative: #b91c1c;
+  --negative-soft: #fdecec;
+  --info: #1d4ed8;
+  --info-soft: #e8eefc;
+  --live: #dc2626;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12100e;
+    --surface: #1b1917;
+    --surface-2: #242220;
+    --border: #35322e;
+    --ink: #f4f2ef;
+    --ink-muted: #a8a29b;
+    --ink-faint: #6b6560;
+    --accent: #f59e0b;
+    --accent-strong: #fbbf24;
+    --accent-soft: #2e2418;
+    --positive: #4ade80;
+    --positive-soft: #17251b;
+    --negative: #f87171;
+    --negative-soft: #2b1a1a;
+    --info: #93b4f5;
+    --info-soft: #1a2233;
+    --live: #f87171;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-positive: var(--positive);
+  --color-positive-soft: var(--positive-soft);
+  --color-negative: var(--negative);
+  --color-negative-soft: var(--negative-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-live: var(--live);
+  --font-display: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Form field primitive */
+.vd-input {
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background-color: var(--bg);
+  padding: 0.55rem 0.85rem;
+  font-size: 0.875rem;
+  color: var(--ink);
+  outline: none;
+}
+.vd-input:focus {
+  border-color: var(--accent);
+}
+.vd-input::placeholder {
+  color: var(--ink-faint);
+}
+
+/* Live transcript caret */
+@keyframes vd-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+.vd-caret::after {
+  content: "▍";
+  color: var(--accent);
+  animation: vd-blink 1s step-end infinite;
+}
+
+/* Pulsing live dot */
+@keyframes vd-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--live) 45%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+.vd-live-dot {
+  animation: vd-pulse 1.6s infinite;
+}

@@ -1,0 +1,38 @@
+{
+  "name": "@vaanidesk/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start --port 3000",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "e2e": "playwright test",
+    "lint": "eslint src e2e"
+  },
+  "dependencies": {
+    "@auth/drizzle-adapter": "^1.10.0",
+    "@vaanidesk/core": "workspace:*",
+    "@vaanidesk/db": "workspace:*",
+    "@vaanidesk/shared": "workspace:*",
+    "drizzle-orm": "catalog:",
+    "next": "^15.4.5",
+    "next-auth": "^5.0.0-beta.29",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "server-only": "^0.0.1",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@tailwindcss/postcss": "^4.1.11",
+    "@types/node": "catalog:",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "tailwindcss": "^4.1.11",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
