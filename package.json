@@ -1,0 +1,32 @@
+{
+  "name": "vaanidesk",
+  "private": true,
+  "version": "0.1.0",
+  "description": "AI voice receptionist for Indian service SMBs — answers calls in Hindi/Hinglish/English, books appointments, confirms on WhatsApp.",
+  "packageManager": "pnpm@10.14.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:generate": "pnpm --filter @vaanidesk/db db:generate",
+    "db:migrate": "pnpm --filter @vaanidesk/db db:migrate",
+    "db:seed": "pnpm --filter @vaanidesk/db db:seed",
+    "db:studio": "pnpm --filter @vaanidesk/db db:studio"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.30.0",
+    "eslint": "^9.30.0",
+    "eslint-config-prettier": "^10.1.5",
+    "prettier": "^3.6.2",
+    "turbo": "^2.5.4",
+    "typescript": "catalog:",
+    "typescript-eslint": "^8.35.0"
+  }
+}
