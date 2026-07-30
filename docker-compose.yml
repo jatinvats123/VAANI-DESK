@@ -1,0 +1,86 @@
+name: vaanidesk
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vaanidesk
+      POSTGRES_PASSWORD: vaanidesk
+      POSTGRES_DB: vaanidesk
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vaanidesk -d vaanidesk"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── App services (opt-in): docker compose --profile apps up --build ────────
+  api:
+    profiles: ["apps"]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://vaanidesk:vaanidesk@postgres:5432/vaanidesk
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  voice-gateway:
+    profiles: ["apps"]
+    build:
+      context: .
+      dockerfile: apps/voice-gateway/Dockerfile
+    env_file: .env
+    environment:
+      API_BASE_URL: http://api:4000
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "4100:4100"
+    depends_on:
+      redis:
+        condition: service_healthy
+    stop_grace_period: 5m # match DRAIN_TIMEOUT_MS — live calls finish first
+
+  workers:
+    profiles: ["apps"]
+    build:
+      context: .
+      dockerfile: apps/workers/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://vaanidesk:vaanidesk@postgres:5432/vaanidesk
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  redis-data:
