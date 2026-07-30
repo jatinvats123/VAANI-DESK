@@ -1,0 +1,8 @@
+node_modules
+dist
+.next
+.turbo
+coverage
+pnpm-lock.yaml
+drizzle/meta
+CHANGELOG.md
