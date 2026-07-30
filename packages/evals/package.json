@@ -1,0 +1,30 @@
+{
+  "name": "@vaanidesk/evals",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "run": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint src tests"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.112.2",
+    "@vaanidesk/agent": "workspace:*",
+    "@vaanidesk/core": "workspace:*",
+    "@vaanidesk/db": "workspace:*",
+    "@vaanidesk/shared": "workspace:*",
+    "dotenv": "^16.5.0",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
