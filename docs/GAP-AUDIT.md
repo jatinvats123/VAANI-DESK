@@ -186,3 +186,64 @@ Your execution order is **Phase 3 (observability) → 9 → 1 → 7 → 2 → re
 observability is the right call: you cannot honestly fill the `TODO(measure-required)` tokens in
 Phases 1 and 9 (cost per call, latency percentiles, concurrency ceiling) until the runtime
 actually measures them. Phase 3 is what makes the later honesty possible.
+
+> **Update (addendum §9 below):** the operator has no Anthropic API key and cannot buy credits.
+> A new **Phase 3.5** (after Phase 3) swaps the LLM to Gemini free tier by default, keeping
+> Anthropic env-selectable. The "minimum keys" list below is therefore rewritten for **free
+> tiers only**, with the free-tier breakage flags the operator asked for.
+
+---
+
+## 9. Free-tier provisioning — minimum keys and what silently breaks
+
+Assumption: **free/trial tiers only** (Gemini free, Deepgram signup credit, ElevenLabs free,
+Twilio trial, Meta WhatsApp test number). Enough for **one demo call**; several things degrade
+or break under concurrency or repeated runs. Each flag is a real code path.
+
+### Minimum keys for one end-to-end call (free-tier edition)
+
+| Provider | Key(s) | Free-tier reality |
+|---|---|---|
+| **LLM — Gemini** (after Phase 3.5) | `GEMINI_API_KEY`, `AGENT_MODEL=gemini-2.5-flash-lite` (or similar) | Free: ~15–30 RPM, ~1,500 requests/day. **Not Anthropic** — that has no free tier and is the reason for the swap. |
+| **STT — Deepgram** | `DEEPGRAM_API_KEY` | Signup credit, then paid. Streaming WS works on credit; credit drains per audio-minute. |
+| **TTS — ElevenLabs** | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID` (no default) | Free: ~10k credits/mo, **~2 concurrent requests**, streaming/commercial use restricted, attribution required. |
+| **Telephony — Twilio** | Twilio number, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, webhooks → `PUBLIC_API_URL`, `GATEWAY_STREAM_URL` | Trial: **verified numbers only**, **trial notice plays before our greeting**, limited credit. |
+| **WhatsApp — Meta** | `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_WEBHOOK_VERIFY_TOKEN` + 3 approved templates | Test number: **only pre-registered recipients (≤5)**; templates still need approval. |
+| **Infra/wiring** | `DATABASE_URL`, `REDIS_URL`, `INTERNAL_SERVICE_SECRET` (same in api+gateway), `API_BASE_URL`, business row with `phone_number` = your Twilio number | Local. |
+
+### What breaks or silently degrades under free limits
+
+1. **Anthropic — hard blocker (no free tier).** `createAnthropicClient` is the current default
+   (`apps/voice-gateway/src/providers/llm.ts`, `packages/evals/src/llm.ts` + `judge.ts`).
+   Without a key, **no call and no eval can run.** → Fixed in Phase 3.5.
+2. **Gemini free-tier RPM vs live-call turn rate — will 429 mid-call under load.** The gateway
+   makes ≥1 LLM request per turn plus up to **3 tool rounds/turn**
+   (`MAX_TOOL_ROUNDS_PER_TURN = 3`, `apps/voice-gateway/src/call/session.ts`). A lively call can
+   approach or exceed **15 requests/minute inside a single call.** Free tier is fine for **one**
+   demo call; **concurrent calls will hit 429s.** Phase 3.5 adds 429 backoff, but on a live
+   voice call a retry injects audible latency — so free-tier Gemini is a demo tool, not a
+   concurrency story. Flag honestly in `LIMITATIONS.md` later.
+3. **Gemini daily quota vs eval suite — a few full runs exhausts the day.** One full 30-scenario
+   run is roughly `Σ turns + tool rounds + one judge call per scenario` ≈ **150–350 requests**
+   (`TODO(measure-required)` — exact count depends on model behaviour). Against **1,500 RPD**
+   that is **~4–8 full runs/day maximum.** CI must not loop the suite. Phase 3.5 documents a
+   realistic cadence (e.g. run on PRs touching `packages/agent`/`evals` only, not every push).
+4. **ElevenLabs free concurrency (~2) caps concurrent calls hard.** The gateway opens one TTS
+   stream-input socket per agent utterance (`apps/voice-gateway/src/providers/tts.ts`). Beyond
+   ~2 simultaneous calls, TTS requests fail → **silence on a live call** (there is no TTS
+   fallback yet; that is Phase 5). Fine for one demo caller.
+5. **Twilio trial notice plays before our recording-consent greeting.** On a trial account the
+   caller hears Twilio's "trial account" message first, then our
+   greeting+consent (`buildGreeting`). It does not break the flow but it front-loads the demo and
+   muddies the consent UX — worth knowing before recording the Phase 9 video.
+6. **WhatsApp test number only messages registered testers.** A confirmation to any other number
+   returns a permanent 4xx, which the worker correctly treats as an **audited skip, not a crash**
+   (`apps/workers/src/whatsapp/client.ts` — retryable vs permanent split). So the *call* still
+   succeeds; the confirmation just won't arrive except to pre-registered recipients.
+7. **Deepgram credit depletion is silent to the product.** No metering of STT seconds exists yet
+   (see §5), so you learn you're out of credit from Deepgram, not from VaaniDesk. Phase 1
+   metering closes this.
+
+**Net:** free tiers are enough to place and record **one** honest end-to-end demo call and to
+establish a **first eval baseline** with a handful of runs. They are not enough to prove
+concurrency, and every concurrency claim stays `TODO(measure-required)` until a paid tier exists.
