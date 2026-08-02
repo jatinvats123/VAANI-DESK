@@ -1,7 +1,9 @@
-import { Worker } from "bullmq";
+import http from "node:http";
+import { Queue, Worker } from "bullmq";
 import { config } from "dotenv";
 import { Redis } from "ioredis";
 import { jobPayloadSchema, NOTIFICATIONS_QUEUE } from "@vaanidesk/shared";
+import { bearerMatches, createMetrics, renderMetrics } from "@vaanidesk/observability";
 import { createDal, createDatabase } from "@vaanidesk/db";
 import { handleMissedCallCallback } from "./callbacks.js";
 import { loadEnv } from "./env.js";
@@ -29,6 +31,7 @@ function main(): void {
   );
   const deps: HandlerDeps = { dal, whatsapp, env, log };
   const s3 = createS3Client(env);
+  const metrics = createMetrics("workers");
 
   const worker = new Worker(
     NOTIFICATIONS_QUEUE,
@@ -52,7 +55,12 @@ function main(): void {
     { connection, concurrency: env.WORKER_CONCURRENCY },
   );
 
+  worker.on("completed", (job) => {
+    metrics.queueJobs.inc({ queue: NOTIFICATIONS_QUEUE, job_type: job.name, result: "ok" });
+  });
   worker.on("failed", (job, error) => {
+    // Fires on every attempt; "failed" here means this attempt failed.
+    metrics.queueJobs.inc({ queue: NOTIFICATIONS_QUEUE, job_type: job?.name ?? "unknown", result: "failed" });
     log.error(
       { jobId: job?.id, attempts: job?.attemptsMade, err: error },
       "job failed (will retry per backoff policy until attempts exhausted)",
@@ -62,6 +70,41 @@ function main(): void {
     log.error({ err: error }, "worker connection error");
   });
 
+  // Poll queue depth by state for the vd_queue_depth gauge. A read-side Queue
+  // handle shares the connection pool but issues its own commands.
+  const queue = new Queue(NOTIFICATIONS_QUEUE, { connection });
+  const pollDepth = async (): Promise<void> => {
+    try {
+      const counts = await queue.getJobCounts("waiting", "active", "delayed", "failed", "completed");
+      for (const [state, value] of Object.entries(counts)) {
+        metrics.queueDepth.set({ queue: NOTIFICATIONS_QUEUE, state }, value);
+      }
+    } catch (error) {
+      log.warn({ err: error }, "queue depth poll failed");
+    }
+  };
+  void pollDepth();
+  const depthTimer = setInterval(() => void pollDepth(), 15_000);
+
+  // Prometheus endpoint (workers has no HTTP server otherwise).
+  const metricsServer = http.createServer((req, res) => {
+    if (req.url !== "/metrics") {
+      res.writeHead(404).end();
+      return;
+    }
+    if (!bearerMatches(req.headers.authorization, env.INTERNAL_SERVICE_SECRET)) {
+      res.writeHead(401).end("unauthorized");
+      return;
+    }
+    void renderMetrics(metrics.registry).then(({ contentType, body }) => {
+      res.writeHead(200, { "content-type": contentType });
+      res.end(body);
+    });
+  });
+  metricsServer.listen(env.METRICS_PORT, () => {
+    log.info({ port: env.METRICS_PORT }, "metrics endpoint listening");
+  });
+
   let shuttingDown = false;
   const shutdown = (signal: string): void => {
     if (shuttingDown) return;
@@ -69,7 +112,10 @@ function main(): void {
     log.info({ signal }, "shutting down — finishing in-flight jobs");
     void (async () => {
       try {
+        clearInterval(depthTimer);
+        metricsServer.close();
         await worker.close(); // waits for active jobs
+        await queue.close();
         await connection.quit();
         await closeDb();
         process.exit(0);

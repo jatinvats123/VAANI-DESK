@@ -15,6 +15,9 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
 
       WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(5),
 
+      /** Port for the Prometheus /metrics endpoint (service-secret guarded). */
+      METRICS_PORT: z.coerce.number().int().min(1).max(65535).default(9095),
+
       /** Missed-call callbacks go through the api (it owns telephony REST). */
       API_BASE_URL: z.string().url().default("http://localhost:4000"),
       INTERNAL_SERVICE_SECRET: z.string().min(16),
