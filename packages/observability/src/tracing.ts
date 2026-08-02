@@ -1,6 +1,7 @@
 import {
   context,
   propagation,
+  SpanKind,
   SpanStatusCode,
   trace,
   type Context,
@@ -128,3 +129,73 @@ export async function withSpan<T>(
 export function callIdFromContext(ctx: Context): string | undefined {
   return propagation.getBaggage(ctx)?.getEntry(CALL_ID_ATTR)?.value;
 }
+
+export interface CallSpan {
+  /** Context carrying the call span + call_id baggage — inject this downstream. */
+  readonly ctx: Context;
+  /** Close the span at call teardown. Pass true to mark it errored. */
+  end(errored?: boolean): void;
+}
+
+/**
+ * Open a long-lived root span for one phone call and pin its `call_id` into the
+ * context so every downstream request (gateway → api → workers) joins the same
+ * trace. No-op-safe: when tracing is disabled the span is non-recording and the
+ * returned context carries nothing, so inject writes no headers.
+ */
+export function startCallSpan(
+  callId: string,
+  attributes: Record<string, string | number | boolean> = {},
+): CallSpan {
+  const base = withCallId(callId);
+  const span = getTracer().startSpan(
+    "voice.call",
+    { attributes: { [CALL_ID_ATTR]: callId, ...attributes } },
+    base,
+  );
+  const ctx = trace.setSpan(base, span);
+  return {
+    ctx,
+    end(errored = false) {
+      if (errored) span.setStatus({ code: SpanStatusCode.ERROR });
+      span.end();
+    },
+  };
+}
+
+export interface ManualSpan {
+  /** Context carrying this span — forward it downstream (e.g. into a job). */
+  readonly ctx: Context;
+  /** Rename once the route template is known (route is unknown at request start). */
+  setName(name: string): void;
+  /** End the span, recording the HTTP status and marking 5xx as errored. */
+  end(httpStatus: number): void;
+}
+
+/**
+ * Start a SERVER-kind span for an inbound HTTP request as a child of the
+ * propagated parent context. Designed for a start-in-onRequest / end-in-
+ * onResponse hook pair where the two ends live in different callbacks, so the
+ * span is managed manually rather than via `withSpan`. No-op-safe.
+ */
+export function startHttpServerSpan(
+  name: string,
+  parent: Context,
+  attributes: Record<string, string | number | boolean> = {},
+): ManualSpan {
+  const span = getTracer().startSpan(name, { kind: SpanKind.SERVER, attributes }, parent);
+  const ctx = trace.setSpan(parent, span);
+  return {
+    ctx,
+    setName: (next) => span.updateName(next),
+    end: (httpStatus) => {
+      span.setAttribute("http.status_code", httpStatus);
+      if (httpStatus >= 500) span.setStatus({ code: SpanStatusCode.ERROR });
+      span.end();
+    },
+  };
+}
+
+// Re-exported so services can type trace contexts without depending on the
+// OpenTelemetry API package directly.
+export type { Context, Span } from "@opentelemetry/api";

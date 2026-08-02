@@ -1,6 +1,6 @@
 # ADR-0008: Runtime observability (metrics, tracing, error tracking)
 
-Date: 2026-08-02 · Status: Accepted (metrics + dashboards landed; tracing + error tracking in progress)
+Date: 2026-08-02 · Status: Accepted (metrics + dashboards + tracing landed; error tracking in progress)
 
 ## Context
 
@@ -46,10 +46,32 @@ alert has a runbook entry with diagnose/recover steps. Thresholds that depend on
 (booking conversion, and latency once load-tested) are marked `TODO(measure-required)` rather
 than invented — per the honesty contract.
 
-### 5. Tracing and error tracking (in progress)
+### 5. OpenTelemetry tracing: one call, one trace (landed)
 
-- **OpenTelemetry tracing** with a `call_id` propagated gateway → api → workers, so one phone
-  call is one trace end to end.
+Tracing is **feature-flagged on `OTEL_EXPORTER_OTLP_ENDPOINT`**. Unset (the default, and every
+local/demo run) → `initTracing` is a clean no-op: the API's no-op tracer, no-op propagator, zero
+spans, no headers added, no behavioural change to the call path. Set → the Node SDK starts with an
+OTLP/HTTP exporter and W3C trace-context + baggage propagation. Propagation is **explicit, not
+auto-instrumented**, because the services run under `tsx` where monkeypatch instrumentation + ESM
+loading is fragile.
+
+The call is the trace root, and its id is the propagation key:
+
+- **Gateway** opens a `voice.call` root span per call (`startCallSpan`) and pins the `call_id` into
+  baggage. It binds the internal api client to that context (`withTraceContext`), so every
+  gateway → api request injects `traceparent` + `baggage`.
+- **API** extracts the parent context on every request (`registerTracing` hook), opens a SERVER
+  span as its child, and stashes a forward-carrier in an `AsyncLocalStorage` (`enterWith`) so a job
+  enqueued mid-request carries the context onward. Verified by a Fastify integration test that the
+  carrier survives an `await` inside the handler.
+- **Workers** read that carrier from the job payload (a reserved `__trace` key the strict
+  `jobPayloadSchema` strips on parse) and run each job inside a `worker.<type>` span parented to it.
+
+Result: gateway → api → workers is a single trace keyed by `call_id`, end to end, with no change to
+the demo path when tracing is off.
+
+### 6. Error tracking (in progress)
+
 - **Sentry** in all four apps, with PII scrubbing consistent with the existing pino redaction
   (`authorization`, `cookie`, phone numbers).
 

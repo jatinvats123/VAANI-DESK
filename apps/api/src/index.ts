@@ -1,5 +1,5 @@
 import { createDal, createDatabase } from "@vaanidesk/db";
-import { createMetrics } from "@vaanidesk/observability";
+import { createMetrics, initTracing } from "@vaanidesk/observability";
 import { config } from "dotenv";
 import { Redis } from "ioredis";
 import { loadEnv } from "./env.js";
@@ -13,6 +13,9 @@ config();
 
 async function main(): Promise<void> {
   const env = loadEnv();
+  // Before the server is built so request spans have a provider. No-op unless
+  // an OTLP endpoint is configured.
+  const tracing = await initTracing("api", env.OTEL_EXPORTER_OTLP_ENDPOINT);
   const { db, close: closeDb } = createDatabase(env.DATABASE_URL);
   const dal = createDal(db);
   const redis = new Redis(env.REDIS_URL);
@@ -32,6 +35,7 @@ async function main(): Promise<void> {
       await queues.close();
       await redis.quit();
       await closeDb();
+      await tracing.shutdown();
       process.exit(0);
     } catch (error) {
       app.log.error({ err: error }, "graceful shutdown failed");

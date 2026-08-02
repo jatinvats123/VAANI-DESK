@@ -7,6 +7,9 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
       NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
       LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error"]).default("info"),
 
+      /** OTLP/HTTP collector base URL. Unset = tracing disabled (no-op). */
+      OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
+
       DATABASE_URL: z
         .string()
         .url()

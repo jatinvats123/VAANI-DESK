@@ -1,3 +1,4 @@
+import { injectTraceContext, type Context } from "@vaanidesk/observability";
 import type { BusinessHours, PromptConfig } from "@vaanidesk/shared";
 import type {
   CallCostBreakdown,
@@ -90,7 +91,14 @@ export class InternalApiClient {
     private readonly baseUrl: string,
     private readonly serviceSecret: string,
     private readonly timeoutMs = 10_000,
+    /** When set, requests inject this trace context so the call is one trace. */
+    private readonly traceContext?: Context,
   ) {}
+
+  /** A client bound to a call's trace context — every request joins that trace. */
+  withTraceContext(ctx: Context): InternalApiClient {
+    return new InternalApiClient(this.baseUrl, this.serviceSecret, this.timeoutMs, ctx);
+  }
 
   async getCallContext(
     provider: TelephonyProvider,
@@ -188,6 +196,8 @@ export class InternalApiClient {
       headers: {
         Authorization: `Bearer ${this.serviceSecret}`,
         ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        // Empty object when tracing is disabled — no headers added.
+        ...injectTraceContext({}, this.traceContext),
       },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       signal: AbortSignal.timeout(this.timeoutMs),

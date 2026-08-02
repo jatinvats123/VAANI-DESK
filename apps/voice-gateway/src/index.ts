@@ -1,4 +1,4 @@
-import { createMetrics } from "@vaanidesk/observability";
+import { createMetrics, initTracing } from "@vaanidesk/observability";
 import { config } from "dotenv";
 import { Redis } from "ioredis";
 import { InternalApiClient } from "./api-client.js";
@@ -12,9 +12,11 @@ import { createGatewayServer } from "./server.js";
 config({ path: "../../.env" });
 config();
 
-function main(): void {
+async function main(): Promise<void> {
   const env = loadEnv();
   const log = createLogger(env);
+  // Must run before any span is created. No-op unless an OTLP endpoint is set.
+  const tracing = await initTracing("voice-gateway", env.OTEL_EXPORTER_OTLP_ENDPOINT);
   const redis = new Redis(env.REDIS_URL);
   const api = new InternalApiClient(env.API_BASE_URL, env.INTERNAL_SERVICE_SECRET);
   const llm = createAnthropicClient({ apiKey: env.ANTHROPIC_API_KEY, model: env.AGENT_MODEL });
@@ -57,6 +59,7 @@ function main(): void {
     void gateway
       .shutdown()
       .then(async () => {
+        await tracing.shutdown();
         await redis.quit();
         process.exit(0);
       })
@@ -70,10 +73,18 @@ function main(): void {
 
   gateway.server.listen(env.GATEWAY_PORT, env.GATEWAY_HOST, () => {
     log.info(
-      { port: env.GATEWAY_PORT, model: env.AGENT_MODEL, stt: env.DEEPGRAM_MODEL },
+      {
+        port: env.GATEWAY_PORT,
+        model: env.AGENT_MODEL,
+        stt: env.DEEPGRAM_MODEL,
+        tracing: tracing.enabled,
+      },
       "voice gateway listening",
     );
   });
 }
 
-main();
+main().catch((error: unknown) => {
+  console.error("voice gateway failed to start:", error);
+  process.exit(1);
+});

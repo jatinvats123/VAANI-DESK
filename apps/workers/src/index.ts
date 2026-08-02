@@ -3,7 +3,14 @@ import { Queue, Worker } from "bullmq";
 import { config } from "dotenv";
 import { Redis } from "ioredis";
 import { jobPayloadSchema, NOTIFICATIONS_QUEUE } from "@vaanidesk/shared";
-import { bearerMatches, createMetrics, renderMetrics } from "@vaanidesk/observability";
+import {
+  bearerMatches,
+  createMetrics,
+  extractTraceContext,
+  initTracing,
+  renderMetrics,
+  withSpan,
+} from "@vaanidesk/observability";
 import { createDal, createDatabase } from "@vaanidesk/db";
 import { handleMissedCallCallback } from "./callbacks.js";
 import { loadEnv } from "./env.js";
@@ -15,9 +22,11 @@ import { createWhatsappClient } from "./whatsapp/client.js";
 config({ path: "../../.env" });
 config();
 
-function main(): void {
+async function main(): Promise<void> {
   const env = loadEnv();
   const log = createLogger(env);
+  // Before any span is created. No-op unless an OTLP endpoint is configured.
+  const tracing = await initTracing("workers", env.OTEL_EXPORTER_OTLP_ENDPOINT);
   const { db, close: closeDb } = createDatabase(env.DATABASE_URL, { max: 5 });
   const dal = createDal(db);
   const connection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
@@ -37,20 +46,31 @@ function main(): void {
     NOTIFICATIONS_QUEUE,
     async (job) => {
       // Version-skew safety: an unrecognized payload fails visibly, not weirdly.
+      // (The __trace carrier the api adds is stripped here by the strict schema.)
       const parsed = jobPayloadSchema.safeParse(job.data);
       if (!parsed.success) {
         log.error({ jobId: job.id, issues: parsed.error.issues }, "invalid job payload — dropping");
         return;
       }
-      if (parsed.data.type === "recording_migration") {
-        await handleRecordingMigration({ dal, env, log, s3 }, parsed.data);
-        return;
-      }
-      if (parsed.data.type === "missed_call_callback") {
-        await handleMissedCallCallback({ env, log }, parsed.data);
-        return;
-      }
-      await handleNotificationJob(deps, parsed.data);
+      // Continue the call's trace: the api forwarded its context under __trace.
+      const carrier = (job.data as { __trace?: Record<string, string> }).__trace ?? {};
+      const parent = extractTraceContext(carrier);
+      await withSpan(
+        `worker.${job.name}`,
+        { "job.id": job.id ?? "", "job.type": job.name },
+        async () => {
+          if (parsed.data.type === "recording_migration") {
+            await handleRecordingMigration({ dal, env, log, s3 }, parsed.data);
+            return;
+          }
+          if (parsed.data.type === "missed_call_callback") {
+            await handleMissedCallCallback({ env, log }, parsed.data);
+            return;
+          }
+          await handleNotificationJob(deps, parsed.data);
+        },
+        parent,
+      );
     },
     { connection, concurrency: env.WORKER_CONCURRENCY },
   );
@@ -118,6 +138,7 @@ function main(): void {
         await queue.close();
         await connection.quit();
         await closeDb();
+        await tracing.shutdown();
         process.exit(0);
       } catch (error) {
         log.error({ err: error }, "shutdown failed");
@@ -133,9 +154,13 @@ function main(): void {
       queue: NOTIFICATIONS_QUEUE,
       concurrency: env.WORKER_CONCURRENCY,
       whatsappConfigured: whatsapp.configured,
+      tracing: tracing.enabled,
     },
     "workers listening",
   );
 }
 
-main();
+main().catch((error: unknown) => {
+  console.error("workers failed to start:", error);
+  process.exit(1);
+});

@@ -1,6 +1,12 @@
 import http from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
-import { bearerMatches, renderMetrics, type VaaniMetrics } from "@vaanidesk/observability";
+import {
+  bearerMatches,
+  renderMetrics,
+  startCallSpan,
+  type CallSpan,
+  type VaaniMetrics,
+} from "@vaanidesk/observability";
 import { liveCallsChannel, serializeLiveCallEvent, type LiveCallEvent } from "@vaanidesk/shared";
 import type { InternalApiClient } from "./api-client.js";
 import { CallSession, newConnectionId, type SessionDeps } from "./call/session.js";
@@ -69,6 +75,7 @@ export function createGatewayServer(deps: GatewayDeps): GatewayServer {
     connLog.info("media stream connected");
 
     let session: CallSession | undefined;
+    let callSpan: CallSpan | undefined;
     let starting = false;
     const queuedMedia: string[] = [];
 
@@ -93,11 +100,15 @@ export function createGatewayServer(deps: GatewayDeps): GatewayServer {
               const provider =
                 message.start.customParameters["provider"] === "exotel" ? "exotel" : "twilio";
               const context = await deps.api.getCallContext(provider, start.providerCallSid);
+              // Root span for the whole call; binds the api client so every
+              // downstream request (turns, tools, booking) joins this trace.
+              callSpan = startCallSpan(context.call.id, { "business.id": context.business.id });
+              const callApi = deps.api.withTraceContext(callSpan.ctx);
               const sessionDeps: SessionDeps = {
                 env,
                 metrics: deps.metrics,
                 log: connLog,
-                api: deps.api,
+                api: callApi,
                 publish: (event: LiveCallEvent) =>
                   deps.publishRaw(
                     liveCallsChannel(event.businessId),
@@ -153,7 +164,10 @@ export function createGatewayServer(deps: GatewayDeps): GatewayServer {
         void closing.onSocketClosed().finally(() => {
           sessions.delete(closing);
           deps.metrics.callsInFlight.set(sessions.size);
+          callSpan?.end();
         });
+      } else {
+        callSpan?.end();
       }
     });
 
