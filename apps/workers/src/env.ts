@@ -9,6 +9,10 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
 
       /** OTLP/HTTP collector base URL. Unset = tracing disabled (no-op). */
       OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
+      /** Sentry DSN. Unset = error tracking disabled (no-op). */
+      SENTRY_DSN: z.string().url().optional(),
+      /** Release identifier tagged on Sentry events (e.g. git sha). */
+      SENTRY_RELEASE: z.string().optional(),
 
       DATABASE_URL: z
         .string()

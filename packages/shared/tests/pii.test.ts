@@ -36,7 +36,7 @@ describe("scrubPII", () => {
       breadcrumbs: [{ data: { fromNumber: "9876543210" } }],
     });
     expect(scrubbed.message).toBe("booking for +91••••••3210");
-    expect(scrubbed.breadcrumbs[0].data.fromNumber).toBe("+91••••••3210");
+    expect(scrubbed.breadcrumbs[0]?.data.fromNumber).toBe("+91••••••3210");
   });
 
   it("does not mutate the input", () => {

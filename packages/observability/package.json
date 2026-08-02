@@ -17,6 +17,7 @@
     "@opentelemetry/resources": "^2.10.0",
     "@opentelemetry/sdk-node": "^0.221.0",
     "@opentelemetry/semantic-conventions": "^1.43.0",
+    "@sentry/node": "^10.69.0",
     "@vaanidesk/shared": "workspace:*",
     "prom-client": "catalog:"
   },

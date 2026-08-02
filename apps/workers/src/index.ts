@@ -7,8 +7,10 @@ import {
   bearerMatches,
   createMetrics,
   extractTraceContext,
+  initSentry,
   initTracing,
   renderMetrics,
+  Sentry,
   withSpan,
 } from "@vaanidesk/observability";
 import { createDal, createDatabase } from "@vaanidesk/db";
@@ -25,6 +27,12 @@ config();
 async function main(): Promise<void> {
   const env = loadEnv();
   const log = createLogger(env);
+  // Errors first. No-op without a DSN.
+  const sentry = initSentry("workers", {
+    dsn: env.SENTRY_DSN,
+    environment: env.NODE_ENV,
+    release: env.SENTRY_RELEASE,
+  });
   // Before any span is created. No-op unless an OTLP endpoint is configured.
   const tracing = await initTracing("workers", env.OTEL_EXPORTER_OTLP_ENDPOINT);
   const { db, close: closeDb } = createDatabase(env.DATABASE_URL, { max: 5 });
@@ -85,6 +93,15 @@ async function main(): Promise<void> {
       { jobId: job?.id, attempts: job?.attemptsMade, err: error },
       "job failed (will retry per backoff policy until attempts exhausted)",
     );
+    // Only report to Sentry once retries are exhausted — transient failures that
+    // later succeed aren't worth an alert. No-op when SENTRY_DSN is unset.
+    const maxAttempts = job?.opts.attempts ?? 1;
+    if (job && job.attemptsMade >= maxAttempts) {
+      Sentry.captureException(error, {
+        tags: { job_type: job.name },
+        extra: { jobId: job.id, attempts: job.attemptsMade },
+      });
+    }
   });
   worker.on("error", (error) => {
     log.error({ err: error }, "worker connection error");
@@ -139,6 +156,7 @@ async function main(): Promise<void> {
         await connection.quit();
         await closeDb();
         await tracing.shutdown();
+        await sentry.flush();
         process.exit(0);
       } catch (error) {
         log.error({ err: error }, "shutdown failed");

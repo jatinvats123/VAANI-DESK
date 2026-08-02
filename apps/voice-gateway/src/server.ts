@@ -3,6 +3,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import {
   bearerMatches,
   renderMetrics,
+  Sentry,
   startCallSpan,
   type CallSpan,
   type VaaniMetrics,
@@ -131,6 +132,7 @@ export function createGatewayServer(deps: GatewayDeps): GatewayServer {
               queuedMedia.length = 0;
             } catch (error) {
               connLog.error({ err: error, callSid: start.providerCallSid }, "session setup failed");
+              Sentry.captureException(error, { tags: { phase: "session_setup" } });
               ws.close(1011, "setup failed");
             }
           })();

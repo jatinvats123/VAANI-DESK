@@ -1,6 +1,6 @@
 # ADR-0008: Runtime observability (metrics, tracing, error tracking)
 
-Date: 2026-08-02 · Status: Accepted (metrics + dashboards + tracing landed; error tracking in progress)
+Date: 2026-08-02 · Status: Accepted (metrics, dashboards, tracing, and error tracking landed)
 
 ## Context
 
@@ -70,10 +70,25 @@ The call is the trace root, and its id is the propagation key:
 Result: gateway → api → workers is a single trace keyed by `call_id`, end to end, with no change to
 the demo path when tracing is off.
 
-### 6. Error tracking (in progress)
+### 6. Error tracking: Sentry, PII-scrubbed, errors-only (landed)
 
-- **Sentry** in all four apps, with PII scrubbing consistent with the existing pino redaction
-  (`authorization`, `cookie`, phone numbers).
+Sentry runs in all four apps, **feature-flagged on `SENTRY_DSN`** (`NEXT_PUBLIC_SENTRY_DSN` for the
+browser). Unset → a disabled client that sends nothing, so local/demo runs are untouched.
+
+- **One scrubber, shared.** `scrubPII` (`@vaanidesk/shared`) is a pure `beforeSend`: it drops
+  secret-bearing keys (`authorization`, `cookie`, `*secret`, `*token`, `*api-key`) and masks phone
+  numbers in every string, reusing `normalizePhone` as the precise gate so ids/timestamps survive.
+  This is the **same discipline as the pino redaction** — no caller PII or secret leaves the
+  process. The three Node services use it via `@sentry/node`; web via `@sentry/nextjs`. Web imports
+  it through the `@vaanidesk/shared/pii` subpath so the barrel's `node:crypto` (slug.ts) never
+  reaches the edge/client bundle.
+- **Errors only; OTel owns tracing.** Node init passes `skipOpenTelemetrySetup` and
+  `tracesSampleRate: 0` so Sentry never registers its own OTel providers and fight decision #5.
+- **Where we capture.** api: 5xx in the Fastify error handler (route template as tag, no raw
+  path). gateway: session-setup failures. workers: only once a job's retries are exhausted (a
+  transient failure that later succeeds isn't an alert). web: server/edge via the Next
+  instrumentation hook + `onRequestError`, browser via `instrumentation-client`. Unhandled
+  exceptions are captured by Sentry's default handlers. Every service flushes on shutdown.
 
 These are additive and do not change the metric decisions above.
 

@@ -1,4 +1,4 @@
-import { createMetrics, initTracing } from "@vaanidesk/observability";
+import { createMetrics, initSentry, initTracing } from "@vaanidesk/observability";
 import { config } from "dotenv";
 import { Redis } from "ioredis";
 import { InternalApiClient } from "./api-client.js";
@@ -15,6 +15,12 @@ config();
 async function main(): Promise<void> {
   const env = loadEnv();
   const log = createLogger(env);
+  // Errors first. No-op without a DSN.
+  const sentry = initSentry("voice-gateway", {
+    dsn: env.SENTRY_DSN,
+    environment: env.NODE_ENV,
+    release: env.SENTRY_RELEASE,
+  });
   // Must run before any span is created. No-op unless an OTLP endpoint is set.
   const tracing = await initTracing("voice-gateway", env.OTEL_EXPORTER_OTLP_ENDPOINT);
   const redis = new Redis(env.REDIS_URL);
@@ -60,6 +66,7 @@ async function main(): Promise<void> {
       .shutdown()
       .then(async () => {
         await tracing.shutdown();
+        await sentry.flush();
         await redis.quit();
         process.exit(0);
       })

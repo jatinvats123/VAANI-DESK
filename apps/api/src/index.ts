@@ -1,5 +1,5 @@
 import { createDal, createDatabase } from "@vaanidesk/db";
-import { createMetrics, initTracing } from "@vaanidesk/observability";
+import { createMetrics, initSentry, initTracing } from "@vaanidesk/observability";
 import { config } from "dotenv";
 import { Redis } from "ioredis";
 import { loadEnv } from "./env.js";
@@ -13,6 +13,12 @@ config();
 
 async function main(): Promise<void> {
   const env = loadEnv();
+  // Errors first, so a failure anywhere in boot is captured. No-op without DSN.
+  const sentry = initSentry("api", {
+    dsn: env.SENTRY_DSN,
+    environment: env.NODE_ENV,
+    release: env.SENTRY_RELEASE,
+  });
   // Before the server is built so request spans have a provider. No-op unless
   // an OTLP endpoint is configured.
   const tracing = await initTracing("api", env.OTEL_EXPORTER_OTLP_ENDPOINT);
@@ -36,6 +42,7 @@ async function main(): Promise<void> {
       await redis.quit();
       await closeDb();
       await tracing.shutdown();
+      await sentry.flush();
       process.exit(0);
     } catch (error) {
       app.log.error({ err: error }, "graceful shutdown failed");
