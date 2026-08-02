@@ -1,0 +1,147 @@
+{
+  "__comment": "VaaniDesk overview dashboard. Import into Grafana (Dashboards > Import). Expects a Prometheus datasource scraping the api/gateway/workers /metrics endpoints. Panel queries use the vd_* metric catalog from @vaanidesk/observability.",
+  "title": "VaaniDesk — Overview",
+  "uid": "vaanidesk-overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "tags": ["vaanidesk"],
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Calls in flight",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [{ "expr": "sum(vd_calls_in_flight)", "legendFormat": "in flight" }]
+    },
+    {
+      "id": 2,
+      "title": "Calls per minute",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 4, "w": 9, "x": 6, "y": 0 },
+      "targets": [{ "expr": "sum(rate(vd_calls_total[5m])) * 60", "legendFormat": "calls/min" }]
+    },
+    {
+      "id": 3,
+      "title": "Booking conversion (voice bookings / call)",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 4, "w": 9, "x": 15, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "percentunit" } },
+      "targets": [
+        {
+          "expr": "sum(rate(vd_bookings_total{source=\"voice\",result=\"created\"}[1h])) / clamp_min(sum(rate(vd_calls_total[1h])), 0.001)",
+          "legendFormat": "conversion"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Turn latency p50/p95 by stage (seconds)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(vd_turn_latency_seconds_bucket[5m])) by (le, stage))",
+          "legendFormat": "p50 {{stage}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(vd_turn_latency_seconds_bucket[5m])) by (le, stage))",
+          "legendFormat": "p95 {{stage}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Provider error rate (per sec)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        {
+          "expr": "sum(rate(vd_provider_requests_total{result=\"error\"}[5m])) by (provider, kind)",
+          "legendFormat": "{{provider}} {{kind}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Barge-in & guardrail triggers (per min)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        { "expr": "sum(rate(vd_barge_in_total[5m])) * 60", "legendFormat": "barge-in" },
+        { "expr": "sum(rate(vd_guardrail_triggers_total[5m])) by (type) * 60", "legendFormat": "{{type}}" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Tool-call success rate",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "fieldConfig": { "defaults": { "unit": "percentunit" } },
+      "targets": [
+        {
+          "expr": "sum(rate(vd_tool_calls_total{result=\"ok\"}[5m])) by (tool) / clamp_min(sum(rate(vd_tool_calls_total[5m])) by (tool), 0.001)",
+          "legendFormat": "{{tool}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Queue depth by state",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "targets": [{ "expr": "sum(vd_queue_depth) by (state)", "legendFormat": "{{state}}" }]
+    },
+    {
+      "id": 9,
+      "title": "Job failure rate & webhook signature failures",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "targets": [
+        {
+          "expr": "sum(rate(vd_queue_jobs_total{result=\"failed\"}[15m])) / clamp_min(sum(rate(vd_queue_jobs_total[15m])), 0.001)",
+          "legendFormat": "job failure rate"
+        },
+        {
+          "expr": "sum(rate(vd_webhook_signature_failures_total[5m])) by (provider)",
+          "legendFormat": "sig fail {{provider}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "API request latency p95 by route (seconds)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 28 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(vd_http_request_duration_seconds_bucket[5m])) by (le, route))",
+          "legendFormat": "{{route}}"
+        }
+      ]
+    }
+  ]
+}
