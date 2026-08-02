@@ -4,7 +4,7 @@ import { Redis } from "ioredis";
 import { InternalApiClient } from "./api-client.js";
 import { loadEnv } from "./env.js";
 import { createLogger } from "./logger.js";
-import { createAnthropicClient } from "./providers/llm.js";
+import { createLlmClient } from "./providers/factory.js";
 import { createDeepgramStream } from "./providers/stt.js";
 import { createElevenLabsSession } from "./providers/tts.js";
 import { createGatewayServer } from "./server.js";
@@ -25,11 +25,12 @@ async function main(): Promise<void> {
   const tracing = await initTracing("voice-gateway", env.OTEL_EXPORTER_OTLP_ENDPOINT);
   const redis = new Redis(env.REDIS_URL);
   const api = new InternalApiClient(env.API_BASE_URL, env.INTERNAL_SERVICE_SECRET);
-  const llm = createAnthropicClient({ apiKey: env.ANTHROPIC_API_KEY, model: env.AGENT_MODEL });
+  const { client: llm, provider: llmProvider, model } = createLlmClient(env);
   const metrics = createMetrics("voice-gateway");
 
   const gateway = createGatewayServer({
     env,
+    agentModel: model, // resolved by the factory; flows to cost + metrics
     log,
     metrics,
     api,
@@ -82,7 +83,8 @@ async function main(): Promise<void> {
     log.info(
       {
         port: env.GATEWAY_PORT,
-        model: env.AGENT_MODEL,
+        provider: llmProvider,
+        model,
         stt: env.DEEPGRAM_MODEL,
         tracing: tracing.enabled,
       },

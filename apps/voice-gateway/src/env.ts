@@ -26,8 +26,16 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
       DEEPGRAM_API_KEY: z.string().min(1),
       DEEPGRAM_MODEL: z.string().default("nova-3"),
 
-      ANTHROPIC_API_KEY: z.string().min(1),
-      AGENT_MODEL: z.string().default("claude-haiku-4-5-20251001"),
+      /**
+       * Which LLM backs the agent. Both keys are optional here; the provider
+       * factory validates that the selected provider's key is present at boot,
+       * so a Gemini-only setup needs no Anthropic key (ADR-0009).
+       */
+      LLM_PROVIDER: z.enum(["anthropic", "gemini"]).default("anthropic"),
+      ANTHROPIC_API_KEY: z.string().optional(),
+      GEMINI_API_KEY: z.string().optional(),
+      /** Model id; when unset the factory picks a per-provider default. */
+      AGENT_MODEL: z.string().optional(),
 
       ELEVENLABS_API_KEY: z.string().min(1),
       ELEVENLABS_VOICE_ID: z.string().min(1),

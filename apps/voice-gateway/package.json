@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.112.2",
+    "@google/genai": "^2.15.0",
     "@vaanidesk/agent": "workspace:*",
     "@vaanidesk/core": "workspace:*",
     "@vaanidesk/observability": "workspace:*",

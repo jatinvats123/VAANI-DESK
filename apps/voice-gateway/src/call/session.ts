@@ -40,7 +40,9 @@ import { acceptsCallerAudio, canTransitionCall, isInterruptible, type CallState 
 
 /** Everything a session needs, injected — no module singletons (testability). */
 export interface SessionDeps {
-  env: Pick<Env, "SILENCE_TIMEOUT_MS" | "MAX_CALL_DURATION_MS" | "AGENT_MODEL">;
+  env: Pick<Env, "SILENCE_TIMEOUT_MS" | "MAX_CALL_DURATION_MS">;
+  /** Resolved model id (provider factory), used for the provider metric + cost. */
+  agentModel: string;
   metrics: VaaniMetrics;
   log: Logger;
   api: InternalApiClient;
@@ -341,7 +343,7 @@ export class CallSession {
         });
         timer.markLlmCompleted();
         this.deps.metrics.providerRequests.inc({
-          provider: this.deps.env.AGENT_MODEL,
+          provider: this.deps.agentModel,
           kind: "llm",
           result: "ok",
         });
@@ -401,7 +403,7 @@ export class CallSession {
     } catch (error) {
       if (signal.aborted) return; // barge-in or shutdown — the new turn owns the call now
       this.deps.metrics.providerRequests.inc({
-        provider: this.deps.env.AGENT_MODEL,
+        provider: this.deps.agentModel,
         kind: "llm",
         result: "error",
       });
@@ -860,7 +862,7 @@ export class CallSession {
     // Outbound-callback attribution can be threaded through later if it matters.
     this.deps.metrics.callsTotal.inc({ direction: "inbound", outcome });
     const durationSec = Math.round((Date.now() - this.startedAtMs) / 1000);
-    const pricing = pricingForModel(this.deps.env.AGENT_MODEL);
+    const pricing = pricingForModel(this.deps.agentModel);
     const llmPaise = pricing ? computeLlmCostPaise(this.tokenUsage, pricing) : undefined;
 
     // The api's transfer endpoint already completed transferred calls.
