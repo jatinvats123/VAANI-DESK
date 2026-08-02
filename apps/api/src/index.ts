@@ -1,4 +1,5 @@
 import { createDal, createDatabase } from "@vaanidesk/db";
+import { createMetrics } from "@vaanidesk/observability";
 import { config } from "dotenv";
 import { Redis } from "ioredis";
 import { loadEnv } from "./env.js";
@@ -17,8 +18,9 @@ async function main(): Promise<void> {
   const redis = new Redis(env.REDIS_URL);
   const createSubscriber = (): Redis => new Redis(env.REDIS_URL);
   const queues = createJobQueues(env.REDIS_URL, pino({ level: env.LOG_LEVEL }));
+  const metrics = createMetrics("api");
 
-  const app = await buildServer({ env, db, dal, redis, createSubscriber, jobs: queues.jobs });
+  const app = await buildServer({ env, db, dal, redis, createSubscriber, jobs: queues.jobs, metrics });
 
   let shuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {

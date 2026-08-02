@@ -78,6 +78,7 @@ export function registerTelephonyWebhooks(app: FastifyInstance, deps: AppDeps): 
       return true;
     }
     request.log.warn({ url }, "Rejected telephony webhook: bad signature");
+    deps.metrics.webhookSignatureFailures.inc({ provider: "twilio" });
     void reply.status(403).send({ error: "invalid signature" });
     return false;
   }

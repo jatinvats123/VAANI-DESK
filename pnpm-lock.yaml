@@ -86,6 +86,9 @@ importers:
       '@vaanidesk/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@vaanidesk/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@vaanidesk/shared':
         specifier: workspace:*
         version: link:../../packages/shared

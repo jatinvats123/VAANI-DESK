@@ -21,6 +21,7 @@
     "@fastify/websocket": "^11.1.0",
     "@vaanidesk/core": "workspace:*",
     "@vaanidesk/db": "workspace:*",
+    "@vaanidesk/observability": "workspace:*",
     "@vaanidesk/shared": "workspace:*",
     "bullmq": "^5.80.8",
     "dotenv": "^16.5.0",

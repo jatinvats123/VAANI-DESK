@@ -9,6 +9,7 @@ import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod
 import type { AppDeps } from "./context.js";
 import { createAuthGuards } from "./plugins/auth.js";
 import { registerErrorHandling } from "./plugins/error-handler.js";
+import { registerMetrics } from "./plugins/metrics.js";
 import { registerAvailabilityRoutes } from "./modules/availability/routes.js";
 import { registerBookingRoutes } from "./modules/bookings/routes.js";
 import { registerBusinessRoutes } from "./modules/businesses/routes.js";
@@ -63,11 +64,13 @@ export async function buildServer(deps: AppDeps): Promise<FastifyInstance> {
       request.url.startsWith("/webhooks/") ||
       request.url.startsWith("/v1/internal/") ||
       request.url === "/healthz" ||
-      request.url === "/readyz",
+      request.url === "/readyz" ||
+      request.url === "/metrics",
   });
 
   const guards = createAuthGuards(deps);
 
+  registerMetrics(app, deps);
   registerHealthRoutes(app, deps);
   registerBusinessRoutes(app, deps, guards);
   registerServiceRoutes(app, deps, guards);
