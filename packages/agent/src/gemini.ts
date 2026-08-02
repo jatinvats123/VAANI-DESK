@@ -13,7 +13,10 @@ import { buildAnthropicTools } from "./tools.js";
 // ── Anthropic side (only the block shapes the session actually produces) ──────
 export type AnthropicBlock =
   | { type: "text"; text: string }
-  | { type: "tool_use"; id: string; name: string; input: unknown }
+  // `thoughtSignature` is Gemini-only: thinking models return it on a functionCall
+  // and require it echoed back on later turns. We stash it on the (otherwise
+  // Anthropic-shaped) tool_use block so it survives the round-trip through history.
+  | { type: "tool_use"; id: string; name: string; input: unknown; thoughtSignature?: string }
   | { type: "tool_result"; tool_use_id: string; content: string };
 
 export interface AnthropicMessage {
@@ -26,6 +29,8 @@ export interface GeminiPart {
   text?: string;
   functionCall?: { name: string; args: Record<string, unknown> };
   functionResponse?: { name: string; response: Record<string, unknown> };
+  /** Opaque token thinking models attach to functionCall parts; must round-trip. */
+  thoughtSignature?: string;
 }
 export interface GeminiContent {
   role: "user" | "model";
@@ -141,6 +146,10 @@ export function toGeminiContents(messages: AnthropicMessage[]): GeminiContent[] 
             name: block.name,
             args: (block.input ?? {}) as Record<string, unknown>,
           },
+          // Echo the signature back or the model rejects the follow-up turn.
+          ...(block.thoughtSignature !== undefined
+            ? { thoughtSignature: block.thoughtSignature }
+            : {}),
         });
       } else {
         parts.push({
@@ -196,7 +205,15 @@ export function fromGeminiParts(parts: GeminiPart[]): ConvertedGeminiResponse {
       const id = nextToolCallId(part.functionCall.name);
       const input = part.functionCall.args ?? {};
       toolUses.push({ id, name: part.functionCall.name, input });
-      assistantContent.push({ type: "tool_use", id, name: part.functionCall.name, input });
+      assistantContent.push({
+        type: "tool_use",
+        id,
+        name: part.functionCall.name,
+        input,
+        ...(part.thoughtSignature !== undefined
+          ? { thoughtSignature: part.thoughtSignature }
+          : {}),
+      });
     }
   }
 
