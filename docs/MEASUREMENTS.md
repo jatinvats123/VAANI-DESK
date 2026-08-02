@@ -21,19 +21,26 @@ Every provider authenticated and was exercised with a real API call:
 | Gemini (LLM)        | ✓    | streaming turn + multi-turn tool calls               | free tier; `gemini-flash-lite-latest`                             |
 | Deepgram (STT)      | ✓    | streamed μ-law → **verbatim transcript**             | `nova-3`, `language=multi`                                        |
 | ElevenLabs (TTS)    | ✓    | stream-input WS → μ-law audio                        | free tier, 9,971/10,000 chars left. **Configured voice was paid** (`payment_required`); switched `ELEVENLABS_VOICE_ID` to a free voice. |
-| Twilio (telephony)  | ✓    | account fetch + phone-number list                    | **Trial** account, **no phone number** provisioned.               |
+| Twilio (telephony)  | partial | account fetch + number list (200); caller-id + number-search (401) | Account `ACe7…` is **Trial** but owns **zero** numbers, and does **not** own the provided `+17372212163`. The 200/401 split across endpoints points to **Test Credentials or a different project**, not the live keys of the number's project. |
 
 **Remaining blockers to a real inbound phone-call demo** (answer to "is the phone number the only
-thing missing?"): **No — two things.**
-1. **Twilio has no phone number**, and the account is **Trial** (trial numbers can only call
-   *verified* caller IDs and play a Twilio trial greeting). Provision a voice-capable number
-   (upgrade for an unrestricted demo).
-2. **ElevenLabs**: the originally-configured voice is a paid voice (returned `payment_required`);
-   fixed by switching to a free voice. Switch back once on a paid ElevenLabs plan.
+thing missing?"): **No.**
+1. **Twilio credential ↔ number mismatch (current hard blocker).** The `TWILIO_ACCOUNT_SID` /
+   `TWILIO_AUTH_TOKEN` in `.env` belong to an account that owns no numbers and does not own
+   `+17372212163`. Fix: copy the **live** Account SID + Auth Token of the *same* Twilio project that
+   lists `+17372212163` under Phone Numbers (Console → project switcher → Account Info). This is a
+   config mismatch, **not** a trial restriction.
+2. **Twilio Trial restrictions (apply once #1 is fixed).** Inbound calls to a trial number play a
+   Twilio trial greeting before the app answers; only **verified** caller IDs can reach it (fine for
+   your own verified phone; a third party can't demo it); the app's outbound *missed-call callback*
+   works only to verified numbers. Media Streams (the audio path) do work on trial.
+3. **ElevenLabs voice** (fixed): the originally-configured voice was paid (`payment_required`);
+   switched `ELEVENLABS_VOICE_ID` to a free voice. Switch back on a paid plan.
 
 Everything **up to the Twilio boundary** — Gemini, Deepgram, ElevenLabs — is validated working with
-real credentials and real latency. What is left is exclusively the telephony transport (a real
-number + public tunnel + running the stack), per demo path **B** in [DEMO.md](DEMO.md).
+real credentials and real latency. What's left is the telephony transport: matching Twilio
+credentials, then a public tunnel + running stack + you dialing, per demo path **B** in
+[DEMO.md](DEMO.md).
 
 ### LLM integration (validated live, 2026-08-02)
 
