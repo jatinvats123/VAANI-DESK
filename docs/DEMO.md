@@ -7,9 +7,11 @@ Two ways to see VaaniDesk work, depending on what credentials you have.
 - **B. Live phone call (full pipeline)** — a real caller dials a number and books. Needs the voice
   providers below and is what you record for the demo video.
 
-> Honesty note: this repo can only produce **A** without paid voice providers. **B** requires
-> Deepgram + ElevenLabs + a telephony number; those numbers (voice-to-voice latency, telephony
-> cost) are `TODO(measure-required)` in [MEASUREMENTS.md](MEASUREMENTS.md) until B is run.
+> Status (2026-08-02): the three providers for **B** — Gemini, Deepgram, ElevenLabs — are all
+> validated working with real credentials (see [MEASUREMENTS.md](MEASUREMENTS.md)). The only things
+> still blocking a real inbound call are on the Twilio side: a **voice-capable phone number** (none
+> is provisioned) and the account being on **Trial**. Live voice-to-voice latency and telephony
+> cost remain `TODO(measure-required)` until a real call runs over B.
 
 ---
 
@@ -41,6 +43,13 @@ suite is best run in CI/nightly (see [MEASUREMENTS.md](MEASUREMENTS.md)).
 | TTS            | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID` | elevenlabs.io                 |
 | Telephony      | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`   | twilio.com (+ a phone number) |
 | Public URL     | an https/wss tunnel (e.g. ngrok)            | —                             |
+
+> Two gotchas found during validation:
+> - **`ELEVENLABS_VOICE_ID` must be a voice your plan allows.** Premium/cloned voices return
+>   `payment_required` on the free tier — the WS just closes. Use a default voice id (e.g.
+>   `CwhRBWXzGAHq8TQ4Fs17`) on free, or upgrade.
+> - **A Twilio Trial account** can only call *verified* caller numbers and prepends a trial greeting.
+>   Upgrade for a clean demo, and provision a **voice-capable** number.
 
 ### Steps
 
