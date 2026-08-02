@@ -130,11 +130,19 @@ jobs:
       - name: Check eval secrets
         id: secrets
         run: |
-          if [ -n "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+          # Provider-agnostic (ADR-0009): prefer Gemini when its key is set,
+          # else fall back to Anthropic. Skip cleanly when neither is configured.
+          if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
             echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "provider=gemini" >> "$GITHUB_OUTPUT"
+            echo "model=gemini-flash-lite-latest" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "provider=anthropic" >> "$GITHUB_OUTPUT"
+            echo "model=claude-haiku-4-5-20251001" >> "$GITHUB_OUTPUT"
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::ANTHROPIC_API_KEY not configured — eval gate skipped."
+            echo "::warning::No LLM key (GEMINI_API_KEY or ANTHROPIC_API_KEY) configured — eval gate skipped."
           fi
 
       - name: Run scenario suite with pass-rate gate
@@ -145,9 +153,11 @@ jobs:
           --git-sha "$GITHUB_SHA"
           --git-branch "${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
         env:
+          LLM_PROVIDER: ${{ steps.secrets.outputs.provider }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           # Neon CI branch database — stores runs/results for the baseline gate.
           DATABASE_URL: ${{ secrets.EVALS_DATABASE_URL }}
-          AGENT_MODEL: claude-haiku-4-5-20251001
+          AGENT_MODEL: ${{ steps.secrets.outputs.model }}
 
 # The nightly full-suite eval run lives in nightly.yml.

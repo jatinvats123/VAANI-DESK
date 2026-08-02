@@ -20,6 +20,8 @@ import { extractStreamStart, parseTwilioMessage } from "./telephony/twilio-media
 
 export interface GatewayDeps {
   env: Env;
+  /** Resolved LLM model id (from the provider factory). */
+  agentModel: string;
   log: Logger;
   metrics: VaaniMetrics;
   api: InternalApiClient;
@@ -107,6 +109,7 @@ export function createGatewayServer(deps: GatewayDeps): GatewayServer {
               const callApi = deps.api.withTraceContext(callSpan.ctx);
               const sessionDeps: SessionDeps = {
                 env,
+                agentModel: deps.agentModel,
                 metrics: deps.metrics,
                 log: connLog,
                 api: callApi,

@@ -22,6 +22,13 @@ export const DEFAULT_MODEL_PRICING: Record<string, ModelPricing> = {
   "claude-haiku-4-5-20251001": { inputPaisePerMTok: 9_000, outputPaisePerMTok: 45_000 },
   // $3 / $15 per MTok at ₹90/USD
   "claude-sonnet-5": { inputPaisePerMTok: 27_000, outputPaisePerMTok: 135_000 },
+  // Gemini free tier — no charge (ADR-0009). The "-latest" aliases are the ones
+  // that carry free-tier quota. Paid tier / Vertex AI must override these via
+  // config with real rates before billing customers on Gemini.
+  "gemini-flash-latest": { inputPaisePerMTok: 0, outputPaisePerMTok: 0 },
+  "gemini-flash-lite-latest": { inputPaisePerMTok: 0, outputPaisePerMTok: 0 },
+  "gemini-2.0-flash-lite": { inputPaisePerMTok: 0, outputPaisePerMTok: 0 },
+  "gemini-2.0-flash": { inputPaisePerMTok: 0, outputPaisePerMTok: 0 },
 };
 
 export function pricingForModel(

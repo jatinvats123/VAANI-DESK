@@ -25,6 +25,18 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Resolve provider
+        id: secrets
+        run: |
+          # Same provider preference as ci.yml (ADR-0009): Gemini if keyed, else Anthropic.
+          if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
+            echo "provider=gemini" >> "$GITHUB_OUTPUT"
+            echo "model=gemini-flash-lite-latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "provider=anthropic" >> "$GITHUB_OUTPUT"
+            echo "model=claude-haiku-4-5-20251001" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run full suite (records the main baseline the CI gate compares against)
         run: >
           pnpm --filter @vaanidesk/evals run --
@@ -32,6 +44,8 @@ jobs:
           --git-sha "$GITHUB_SHA"
           --git-branch main
         env:
+          LLM_PROVIDER: ${{ steps.secrets.outputs.provider }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           DATABASE_URL: ${{ secrets.EVALS_DATABASE_URL }}
-          AGENT_MODEL: claude-haiku-4-5-20251001
+          AGENT_MODEL: ${{ steps.secrets.outputs.model }}
