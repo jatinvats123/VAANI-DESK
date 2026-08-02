@@ -3,9 +3,11 @@ import { config } from "dotenv";
 import { computeLlmCostPaise, pricingForModel } from "@vaanidesk/agent";
 import { createDatabase, createEvalStore } from "@vaanidesk/db";
 import { evaluateAssertions } from "./assertions.js";
+import { createGeminiEvalLlm, judgeWithGemini } from "./gemini.js";
 import { judgeConversation } from "./judge.js";
-import { createEvalLlm } from "./llm.js";
+import { createEvalLlm, type EvalLlm } from "./llm.js";
 import { runConversation } from "./runner.js";
+import type { ConversationResult, EvalScenario, JudgeVerdict } from "./types.js";
 import { ALL_SCENARIOS } from "./scenarios/index.js";
 import type { ScenarioOutcome } from "./types.js";
 
@@ -29,14 +31,31 @@ async function main(): Promise<void> {
     },
   });
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  // Provider selection mirrors the gateway (ADR-0009): LLM_PROVIDER picks the
+  // backend, and only that provider's key is required.
+  const provider = process.env.LLM_PROVIDER === "gemini" ? "gemini" : "anthropic";
+  const defaultModel =
+    provider === "gemini" ? "gemini-flash-lite-latest" : "claude-haiku-4-5-20251001";
+  const apiKey = provider === "gemini" ? process.env.GEMINI_API_KEY : process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    console.error("ANTHROPIC_API_KEY is required to run evals.");
+    const keyName = provider === "gemini" ? "GEMINI_API_KEY" : "ANTHROPIC_API_KEY";
+    console.error(`${keyName} is required to run evals with LLM_PROVIDER=${provider}.`);
     process.exit(2);
   }
-  const model = process.env.AGENT_MODEL ?? "claude-haiku-4-5-20251001";
+  const model = process.env.AGENT_MODEL ?? defaultModel;
   const judgeModel = process.env.EVAL_JUDGE_MODEL ?? model;
-  const llm = createEvalLlm({ apiKey, model });
+
+  const llm: EvalLlm =
+    provider === "gemini"
+      ? createGeminiEvalLlm({ apiKey, model })
+      : createEvalLlm({ apiKey, model });
+  const judge = (
+    scenario: EvalScenario,
+    result: ConversationResult,
+  ): Promise<JudgeVerdict> =>
+    provider === "gemini"
+      ? judgeWithGemini({ apiKey, model: judgeModel }, scenario, result)
+      : judgeConversation({ apiKey, model: judgeModel }, scenario, result);
 
   const scenarios = values.filter
     ? ALL_SCENARIOS.filter(
@@ -48,7 +67,7 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  console.log(`Running ${scenarios.length} scenario(s) against ${model}…\n`);
+  console.log(`Running ${scenarios.length} scenario(s) against ${provider}:${model}…\n`);
   const outcomes: ScenarioOutcome[] = [];
 
   for (const scenario of scenarios) {
@@ -58,16 +77,17 @@ async function main(): Promise<void> {
       ? []
       : evaluateAssertions(scenario.assertions, result);
 
-    let judge;
+    let judgeVerdict;
     if (!values["no-judge"] && !result.runError) {
-      judge = await judgeConversation({ apiKey, model: judgeModel }, scenario, result);
+      judgeVerdict = await judge(scenario, result);
     }
 
     const pricing = pricingForModel(model);
     const costPaise = pricing ? computeLlmCostPaise(result.usage, pricing) : 0;
     const verdict: ScenarioOutcome["verdict"] = result.runError
       ? "error"
-      : assertionFailures.length > 0 || (judge !== undefined && judge.score < JUDGE_PASS_THRESHOLD)
+      : assertionFailures.length > 0 ||
+          (judgeVerdict !== undefined && judgeVerdict.score < JUDGE_PASS_THRESHOLD)
         ? "fail"
         : "pass";
 
@@ -75,14 +95,14 @@ async function main(): Promise<void> {
       scenario,
       result,
       assertionFailures,
-      ...(judge !== undefined ? { judge } : {}),
+      ...(judgeVerdict !== undefined ? { judge: judgeVerdict } : {}),
       verdict,
       costPaise,
       durationMs: Date.now() - startedAt,
     });
 
     const icon = verdict === "pass" ? "✓" : verdict === "fail" ? "✗" : "!";
-    const judgeNote = judge ? ` judge=${judge.score.toFixed(2)}` : "";
+    const judgeNote = judgeVerdict ? ` judge=${judgeVerdict.score.toFixed(2)}` : "";
     console.log(
       `${icon} ${scenario.name} (${verdict})${judgeNote} · ₹${(costPaise / 100).toFixed(2)} · ${Math.round(
         (Date.now() - startedAt) / 1000,
