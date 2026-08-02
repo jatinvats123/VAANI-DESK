@@ -1,5 +1,6 @@
+import { Sentry } from "@vaanidesk/observability";
 import { AppError, toErrorEnvelope } from "@vaanidesk/shared";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
   hasZodFastifySchemaValidationErrors,
   isResponseSerializationError,
@@ -17,6 +18,7 @@ export function registerErrorHandling(app: FastifyInstance): void {
     if (error instanceof AppError) {
       if (error.statusCode >= 500) {
         request.log.error({ err: error, code: error.code }, error.message);
+        captureServerError(error, request);
       }
       return reply.status(error.statusCode).send(toErrorEnvelope(error, requestId));
     }
@@ -35,6 +37,7 @@ export function registerErrorHandling(app: FastifyInstance): void {
 
     if (isResponseSerializationError(error)) {
       request.log.error({ err: error }, "Response failed schema serialization");
+      captureServerError(error, request);
       return reply.status(500).send(toErrorEnvelope(error, requestId));
     }
 
@@ -42,6 +45,7 @@ export function registerErrorHandling(app: FastifyInstance): void {
     const statusCode = extractStatusCode(error);
     if (statusCode >= 500) {
       request.log.error({ err: error }, "Unhandled error");
+      captureServerError(error, request);
       return reply.status(statusCode).send(toErrorEnvelope(error, requestId));
     }
     const message = error instanceof Error && error.message ? error.message : "Bad request";
@@ -49,6 +53,16 @@ export function registerErrorHandling(app: FastifyInstance): void {
       .status(statusCode)
       .send(toErrorEnvelope(new AppError("validation_error", message), requestId));
   });
+
+  // Server-side (5xx) failures go to Sentry. No-op when SENTRY_DSN is unset;
+  // the event is PII-scrubbed by initSentry's beforeSend. Route template (not
+  // the raw path) avoids leaking ids into the Sentry tag.
+  function captureServerError(error: unknown, request: FastifyRequest): void {
+    Sentry.captureException(error, {
+      tags: { route: request.routeOptions.url ?? "unknown", method: request.method },
+      extra: { requestId: request.id },
+    });
+  }
 
   function extractStatusCode(error: unknown): number {
     if (typeof error === "object" && error !== null && "statusCode" in error) {

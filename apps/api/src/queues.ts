@@ -7,6 +7,7 @@ import {
   type JobPayload,
 } from "@vaanidesk/shared";
 import type { FastifyBaseLogger } from "fastify";
+import { currentTraceCarrier } from "./plugins/tracing.js";
 
 /**
  * BullMQ-backed JobEnqueuer. Honors the port contract: never throws — the
@@ -32,10 +33,18 @@ export function createJobQueues(
   const jobs: JobEnqueuer = {
     async enqueue(payload: JobPayload, options: EnqueueOptions): Promise<void> {
       try {
-        await queue.add(payload.type, payload, {
-          jobId: options.jobId,
-          ...(options.delayMs !== undefined ? { delay: options.delayMs } : {}),
-        });
+        // Forward the request's trace context so the worker's job joins the same
+        // trace. Reserved __-prefixed keys; jobPayloadSchema strips them on parse.
+        // Empty when tracing is off.
+        const trace = currentTraceCarrier() ?? {};
+        await queue.add(
+          payload.type,
+          { ...payload, ...(Object.keys(trace).length > 0 ? { __trace: trace } : {}) },
+          {
+            jobId: options.jobId,
+            ...(options.delayMs !== undefined ? { delay: options.delayMs } : {}),
+          },
+        );
       } catch (error) {
         log.error({ err: error, jobId: options.jobId, type: payload.type }, "enqueue failed");
       }

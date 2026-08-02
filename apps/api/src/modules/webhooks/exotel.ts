@@ -65,6 +65,7 @@ export function registerExotelWebhooks(app: FastifyInstance, deps: AppDeps): voi
       return true;
     }
     request.log.warn("Rejected Exotel webhook: bad token");
+    deps.metrics.webhookSignatureFailures.inc({ provider: "exotel" });
     void reply.status(403).send({ error: "invalid token" });
     return false;
   }

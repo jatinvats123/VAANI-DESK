@@ -21,6 +21,7 @@
     "@fastify/websocket": "^11.1.0",
     "@vaanidesk/core": "workspace:*",
     "@vaanidesk/db": "workspace:*",
+    "@vaanidesk/observability": "workspace:*",
     "@vaanidesk/shared": "workspace:*",
     "bullmq": "^5.80.8",
     "dotenv": "^16.5.0",
@@ -35,6 +36,10 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/context-async-hooks": "^2.10.0",
+    "@opentelemetry/core": "^2.10.0",
+    "@opentelemetry/sdk-trace-base": "^2.10.0",
     "@testcontainers/postgresql": "^12.0.4",
     "@types/node": "catalog:",
     "@types/ws": "^8.18.1",

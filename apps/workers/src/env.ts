@@ -7,6 +7,13 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
       NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
       LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error"]).default("info"),
 
+      /** OTLP/HTTP collector base URL. Unset = tracing disabled (no-op). */
+      OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
+      /** Sentry DSN. Unset = error tracking disabled (no-op). */
+      SENTRY_DSN: z.string().url().optional(),
+      /** Release identifier tagged on Sentry events (e.g. git sha). */
+      SENTRY_RELEASE: z.string().optional(),
+
       DATABASE_URL: z
         .string()
         .url()
@@ -14,6 +21,9 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
       REDIS_URL: z.string().url().default("redis://localhost:6379"),
 
       WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(5),
+
+      /** Port for the Prometheus /metrics endpoint (service-secret guarded). */
+      METRICS_PORT: z.coerce.number().int().min(1).max(65535).default(9095),
 
       /** Missed-call callbacks go through the api (it owns telephony REST). */
       API_BASE_URL: z.string().url().default("http://localhost:4000"),

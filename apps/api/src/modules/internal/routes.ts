@@ -172,6 +172,9 @@ export function registerInternalRoutes(
           },
         ),
       );
+      // Conversion metric: bookings created on a voice call. Grafana divides
+      // this by vd_calls_total (gateway) to get the booking conversion rate.
+      deps.metrics.bookingsTotal.inc({ source: "voice", result: created ? "created" : "duplicate" });
       return reply.status(created ? 201 : 200).send({
         booking: toBookingDto(booking),
         created,

@@ -1,5 +1,13 @@
 import http from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
+import {
+  bearerMatches,
+  renderMetrics,
+  Sentry,
+  startCallSpan,
+  type CallSpan,
+  type VaaniMetrics,
+} from "@vaanidesk/observability";
 import { liveCallsChannel, serializeLiveCallEvent, type LiveCallEvent } from "@vaanidesk/shared";
 import type { InternalApiClient } from "./api-client.js";
 import { CallSession, newConnectionId, type SessionDeps } from "./call/session.js";
@@ -13,6 +21,7 @@ import { extractStreamStart, parseTwilioMessage } from "./telephony/twilio-media
 export interface GatewayDeps {
   env: Env;
   log: Logger;
+  metrics: VaaniMetrics;
   api: InternalApiClient;
   /** Publishes a serialized live event onto a Redis channel. */
   publishRaw: (channel: string, message: string) => void;
@@ -41,6 +50,18 @@ export function createGatewayServer(deps: GatewayDeps): GatewayServer {
       res.end(JSON.stringify({ status: draining ? "draining" : "ok", activeCalls: sessions.size }));
       return;
     }
+    if (req.url === "/metrics") {
+      // Guarded by the internal service secret — metrics reveal call volumes.
+      if (!bearerMatches(req.headers.authorization, env.INTERNAL_SERVICE_SECRET)) {
+        res.writeHead(401).end("unauthorized");
+        return;
+      }
+      void renderMetrics(deps.metrics.registry).then(({ contentType, body }) => {
+        res.writeHead(200, { "content-type": contentType });
+        res.end(body);
+      });
+      return;
+    }
     res.writeHead(404).end();
   });
 
@@ -55,6 +76,7 @@ export function createGatewayServer(deps: GatewayDeps): GatewayServer {
     connLog.info("media stream connected");
 
     let session: CallSession | undefined;
+    let callSpan: CallSpan | undefined;
     let starting = false;
     const queuedMedia: string[] = [];
 
@@ -79,10 +101,15 @@ export function createGatewayServer(deps: GatewayDeps): GatewayServer {
               const provider =
                 message.start.customParameters["provider"] === "exotel" ? "exotel" : "twilio";
               const context = await deps.api.getCallContext(provider, start.providerCallSid);
+              // Root span for the whole call; binds the api client so every
+              // downstream request (turns, tools, booking) joins this trace.
+              callSpan = startCallSpan(context.call.id, { "business.id": context.business.id });
+              const callApi = deps.api.withTraceContext(callSpan.ctx);
               const sessionDeps: SessionDeps = {
                 env,
+                metrics: deps.metrics,
                 log: connLog,
-                api: deps.api,
+                api: callApi,
                 publish: (event: LiveCallEvent) =>
                   deps.publishRaw(
                     liveCallsChannel(event.businessId),
@@ -98,12 +125,14 @@ export function createGatewayServer(deps: GatewayDeps): GatewayServer {
               };
               const created = new CallSession(sessionDeps, context, start.streamSid);
               sessions.add(created);
+              deps.metrics.callsInFlight.set(sessions.size);
               session = created;
               await created.begin();
               for (const frame of queuedMedia) created.onMediaPayload(frame);
               queuedMedia.length = 0;
             } catch (error) {
               connLog.error({ err: error, callSid: start.providerCallSid }, "session setup failed");
+              Sentry.captureException(error, { tags: { phase: "session_setup" } });
               ws.close(1011, "setup failed");
             }
           })();
@@ -134,7 +163,13 @@ export function createGatewayServer(deps: GatewayDeps): GatewayServer {
       connLog.info("media stream closed");
       if (session) {
         const closing = session;
-        void closing.onSocketClosed().finally(() => sessions.delete(closing));
+        void closing.onSocketClosed().finally(() => {
+          sessions.delete(closing);
+          deps.metrics.callsInFlight.set(sessions.size);
+          callSpan?.end();
+        });
+      } else {
+        callSpan?.end();
       }
     });
 

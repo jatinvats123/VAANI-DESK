@@ -1,0 +1,98 @@
+# Prometheus alerting rules for VaaniDesk.
+# Load into Prometheus via `rule_files:` and route through Alertmanager.
+# Every alert here has a matching entry in docs/RUNBOOK.md (same alertname).
+#
+# Thresholds marked TODO(measure-required) are placeholders until a real load
+# test / production baseline exists — do not treat them as validated SLOs.
+groups:
+  - name: vaanidesk-latency
+    rules:
+      - alert: TurnLatencyP95OverBudget
+        # docs/latency-budget.md targets p95 ≤ 2.5s voice-to-voice (turn_total).
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(vd_turn_latency_seconds_bucket{stage="turn_total"}[5m])) by (le)
+          ) > 2.5
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Voice turn p95 latency above budget (>2.5s)"
+          description: "p95 turn_total has exceeded the 2.5s budget for 10m. Callers feel dead air."
+          runbook: "docs/RUNBOOK.md#turnlatencyp95overbudget"
+
+  - name: vaanidesk-providers
+    rules:
+      - alert: ProviderErrorSpike
+        expr: |
+          sum(rate(vd_provider_requests_total{result="error"}[5m])) by (provider, kind)
+          > 0.2
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Provider {{ $labels.provider }} ({{ $labels.kind }}) erroring"
+          description: ">0.2 errors/sec from {{ $labels.provider }} for 5m. TTS failure = silence on live calls."
+          runbook: "docs/RUNBOOK.md#providererrorspike"
+
+  - name: vaanidesk-queues
+    rules:
+      - alert: QueueBackingUp
+        expr: vd_queue_depth{state="waiting"} > 100
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Notification queue backing up (>100 waiting)"
+          description: "Waiting jobs > 100 for 10m. Confirmations/reminders are delayed."
+          runbook: "docs/RUNBOOK.md#queuebackingup"
+
+      - alert: JobFailureRateHigh
+        expr: |
+          sum(rate(vd_queue_jobs_total{result="failed"}[15m]))
+          /
+          clamp_min(sum(rate(vd_queue_jobs_total[15m])), 0.001)
+          > 0.25
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Job failure rate > 25%"
+          description: "More than a quarter of job attempts are failing over 15m."
+          runbook: "docs/RUNBOOK.md#jobfailureratehigh"
+
+  - name: vaanidesk-security
+    rules:
+      - alert: WebhookSignatureFailures
+        expr: sum(rate(vd_webhook_signature_failures_total[5m])) by (provider) > 0.1
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Webhook signature failures from {{ $labels.provider }}"
+          description: "Sustained signature failures — misconfigured PUBLIC_API_URL, rotated secret, or a spoofing attempt."
+          runbook: "docs/RUNBOOK.md#webhooksignaturefailures"
+
+  - name: vaanidesk-business
+    rules:
+      - alert: BookingConversionDropped
+        # Conversion = voice bookings created per completed call.
+        # Threshold TODO(measure-required): set from a real baseline once calls flow.
+        expr: |
+          (
+            sum(rate(vd_bookings_total{source="voice",result="created"}[1h]))
+            /
+            clamp_min(sum(rate(vd_calls_total[1h])), 0.001)
+          ) < 0.15
+        for: 2h
+        labels: { severity: warning }
+        annotations:
+          summary: "Booking conversion below baseline"
+          description: "Voice bookings per call dropped below the baseline for 2h. Possible agent/config regression."
+          runbook: "docs/RUNBOOK.md#bookingconversiondropped"
+
+  - name: vaanidesk-availability
+    rules:
+      - alert: ServiceDown
+        expr: up{job=~"vaanidesk-.*"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.job }} is down"
+          description: "Prometheus cannot scrape {{ $labels.instance }} for 2m."
+          runbook: "docs/RUNBOOK.md#servicedown"

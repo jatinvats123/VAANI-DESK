@@ -93,6 +93,7 @@ export function registerWhatsappWebhooks(app: FastifyInstance, deps: AppDeps): v
         request.log.warn("WhatsApp signature invalid or unverifiable — accepted (log mode)");
       } else {
         request.log.warn("Rejected WhatsApp webhook: bad signature");
+        deps.metrics.webhookSignatureFailures.inc({ provider: "whatsapp" });
         return reply.status(403).send({ error: "invalid signature" });
       }
     }

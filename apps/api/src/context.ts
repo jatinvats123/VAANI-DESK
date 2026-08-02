@@ -1,4 +1,5 @@
 import type { Dal, Database } from "@vaanidesk/db";
+import type { VaaniMetrics } from "@vaanidesk/observability";
 import type { JobEnqueuer } from "@vaanidesk/shared";
 import type { Redis } from "ioredis";
 import type { Env } from "./env.js";
@@ -21,4 +22,6 @@ export interface AppDeps {
   createSubscriber: () => Redis;
   /** Notification job producer (BullMQ in prod, NULL_ENQUEUER in tests). */
   jobs: JobEnqueuer;
+  /** Prometheus metrics for this process (see @vaanidesk/observability). */
+  metrics: VaaniMetrics;
 }
