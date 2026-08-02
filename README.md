@@ -59,6 +59,13 @@ Quality gates (run what CI runs):
 pnpm lint && pnpm typecheck && pnpm test
 ```
 
+## Demo & measurements
+
+- **[docs/DEMO.md](docs/DEMO.md)** — see it work: a keyless text demo on Gemini's free tier, and the
+  full live-phone-call runbook (needs STT/TTS/telephony keys).
+- **[docs/MEASUREMENTS.md](docs/MEASUREMENTS.md)** — the honest ledger of what's really been measured
+  vs. what's still `TODO(measure-required)` (and why). No invented numbers.
+
 ## Engineering principles
 
 - **Trust over cleverness** — the agent never invents prices, slots, or confirmations; every

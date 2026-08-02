@@ -83,7 +83,8 @@ issue (bad token, Redis, S3). Check `webhook_events` / `audit_log` for the reaso
 **Diagnose:**
 1. Did a prompt/model/config change ship? Correlate with deploy time.
 2. Run the eval suite (`pnpm --filter @vaanidesk/evals run`) — has the pass rate regressed?
-   (Baseline is `TODO(measure-required)` until the suite runs against a real model.)
+   (The suite now runs against a real model on Gemini's free tier; the pass-rate baseline is
+   recorded by the nightly workflow — see [MEASUREMENTS.md](MEASUREMENTS.md).)
 3. Check `vd_guardrail_triggers_total` — a spike in `unauthorized_amount` or `budget_transfer`
    suggests the agent is derailing.
 **Recover:** roll back the offending change; the eval CI gate should have caught it — verify the

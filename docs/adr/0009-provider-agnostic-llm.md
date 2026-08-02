@@ -25,7 +25,10 @@ both ways:
 
 - `toGeminiContents` / `fromGeminiParts` — message history, including
   `tool_use ⇄ functionCall` and `tool_result ⇄ functionResponse` (Gemini keys responses by name,
-  Anthropic by id, so the bridge resolves the name from the matching tool-use id).
+  Anthropic by id, so the bridge resolves the name from the matching tool-use id). It also preserves
+  the `thought_signature` Gemini's thinking models attach to function-call parts — a real run
+  (Phase 9) showed the follow-up turn is rejected with `400` if it isn't echoed back, so the bridge
+  stashes it on the (otherwise Anthropic-shaped) tool_use block and round-trips it through history.
 - `buildGeminiTools` / `jsonSchemaToGeminiSchema` — the zod-derived tool schema adapted to Gemini's
   OpenAPI subset (uppercased types, validation keywords Gemini rejects stripped).
 
