@@ -21,26 +21,41 @@ Every provider authenticated and was exercised with a real API call:
 | Gemini (LLM)        | ✓    | streaming turn + multi-turn tool calls               | free tier; `gemini-flash-lite-latest`                             |
 | Deepgram (STT)      | ✓    | streamed μ-law → **verbatim transcript**             | `nova-3`, `language=multi`                                        |
 | ElevenLabs (TTS)    | ✓    | stream-input WS → μ-law audio                        | free tier, 9,971/10,000 chars left. **Configured voice was paid** (`payment_required`); switched `ELEVENLABS_VOICE_ID` to a free voice. |
-| Twilio (telephony)  | partial | account fetch + number list (200); caller-id + number-search (401) | Account `ACe7…` is **Trial** but owns **zero** numbers, and does **not** own the provided `+17372212163`. The 200/401 split across endpoints points to **Test Credentials or a different project**, not the live keys of the number's project. |
+| Twilio (telephony)  | ✓ (creds valid) | Account/Calls/Messages/IncomingPhoneNumbers → 200; OutgoingCallerIds/AvailablePhoneNumbers → 401 `20003 Policy evaluation failed` | Valid **Live** keys for `ACe7…` (SID `AC`+32hex, token 32hex; Account 200 proves auth). Account is a **fresh restricted Trial**: number-provisioning + caller-ID endpoints are policy-blocked. Owns **zero** REST `IncomingPhoneNumbers`. |
 
-**Remaining blockers to a real inbound phone-call demo** (answer to "is the phone number the only
-thing missing?"): **No.**
-1. **Twilio credential ↔ number mismatch (current hard blocker).** The `TWILIO_ACCOUNT_SID` /
-   `TWILIO_AUTH_TOKEN` in `.env` belong to an account that owns no numbers and does not own
-   `+17372212163`. Fix: copy the **live** Account SID + Auth Token of the *same* Twilio project that
-   lists `+17372212163` under Phone Numbers (Console → project switcher → Account Info). This is a
-   config mismatch, **not** a trial restriction.
-2. **Twilio Trial restrictions (apply once #1 is fixed).** Inbound calls to a trial number play a
-   Twilio trial greeting before the app answers; only **verified** caller IDs can reach it (fine for
-   your own verified phone; a third party can't demo it); the app's outbound *missed-call callback*
-   works only to verified numbers. Media Streams (the audio path) do work on trial.
-3. **ElevenLabs voice** (fixed): the originally-configured voice was paid (`payment_required`);
-   switched `ELEVENLABS_VOICE_ID` to a free voice. Switch back on a paid plan.
+**Root cause of "REST shows 0 numbers but the Console shows `+17372212163`":** not a credential
+mismatch and not wrong keys (both disproven — the keys authenticate). The account is a brand-new,
+**unverified/restricted Trial**, so Twilio returns `20003 Policy evaluation failed` on
+number-management endpoints, and the trial number is provisioned through Twilio's **new-trial
+"Inbound Try it out" flow — which is not a standard `IncomingPhoneNumber` REST resource**. That is
+why the REST list is empty while the Console shows the number. It's Twilio's new trial architecture +
+a restricted-trial policy.
 
-Everything **up to the Twilio boundary** — Gemini, Deepgram, ElevenLabs — is validated working with
-real credentials and real latency. What's left is the telephony transport: matching Twilio
-credentials, then a public tunnel + running stack + you dialing, per demo path **B** in
-[DEMO.md](DEMO.md).
+**Does this block the inbound demo? No.** VaaniDesk resolves an inbound call by looking up the dialed
+number in **its own DB** (`businesses.getByPhoneNumber(body.To)` in `webhooks/telephony.ts`); it
+**never** calls Twilio's REST API to resolve the number. So a real inbound call to `+17372212163`
+works once:
+1. Twilio's "Inbound Try Out" **Voice webhook** for that number points at the app's **public**
+   `POST /webhooks/telephony/twilio/voice` (an ngrok URL to the api).
+2. The app's DB has a **business whose phone number == `+17372212163`** — else the webhook is
+   skipped ("No business owns …"). Seed/onboard that number.
+3. The app + gateway run and are publicly reachable (webhook to api, `wss://` Media Stream to the
+   gateway); `PUBLIC_API_URL` matches the tunnel so Twilio's signature verifies (or set
+   `WEBHOOK_SIGNATURE_MODE=log` in dev).
+
+**What the Trial genuinely blocks (error 20003 / standard trial):**
+- The app's **missed-call callback** and any **outbound/number-management REST** calls — policy-
+  blocked until the trial is verified/upgraded.
+- Inbound plays a **trial greeting** before the app answers; only **verified caller IDs** can reach
+  the number. Media Streams (the audio path) work on trial.
+
+**ElevenLabs voice** (fixed): the originally-configured voice was paid (`payment_required`); switched
+`ELEVENLABS_VOICE_ID` to a free voice. Switch back on a paid plan.
+
+Everything **up to the Twilio boundary** — Gemini, Deepgram, ElevenLabs — is validated with real
+credentials and latency. The inbound call itself needs: the number mapped to a business in the app
+DB, the app running behind a public tunnel with the Try-Out webhook pointed at it, and **you dialing
+from your verified phone** (per demo path **B** in [DEMO.md](DEMO.md)).
 
 ### LLM integration (validated live, 2026-08-02)
 
