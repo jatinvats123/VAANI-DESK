@@ -23,6 +23,7 @@ import {
   type ToolCallRecord,
   type TurnMetrics,
 } from "@vaanidesk/core";
+import { observeTurnStage, type TurnStage, type VaaniMetrics } from "@vaanidesk/observability";
 import { maskPhone, parseHM, zonedTimeToUtcMs, type LiveCallEvent } from "@vaanidesk/shared";
 import type { CallContextResponse, InternalApiClient, ToolApiResult } from "../api-client.js";
 import type { Env } from "../env.js";
@@ -40,6 +41,7 @@ import { acceptsCallerAudio, canTransitionCall, isInterruptible, type CallState 
 /** Everything a session needs, injected — no module singletons (testability). */
 export interface SessionDeps {
   env: Pick<Env, "SILENCE_TIMEOUT_MS" | "MAX_CALL_DURATION_MS" | "AGENT_MODEL">;
+  metrics: VaaniMetrics;
   log: Logger;
   api: InternalApiClient;
   publish: (event: LiveCallEvent) => void;
@@ -199,6 +201,7 @@ export class CallSession {
         this.disarmSilenceTimer();
       },
       onError: (error) => {
+        this.deps.metrics.providerRequests.inc({ provider: "deepgram", kind: "stt", result: "error" });
         this.log().error({ err: error }, "stt stream error");
         void this.transferFallback("speech recognition failed");
       },
@@ -214,6 +217,7 @@ export class CallSession {
     if (partialText !== undefined && partialText.trim().length < 2) return;
 
     this.log().debug("barge-in: caller spoke while agent speaking");
+    this.deps.metrics.bargeInTotal.inc();
     this.llmAbort?.abort();
     this.activeTts?.abort();
     this.activeTts = undefined;
@@ -245,6 +249,7 @@ export class CallSession {
     this.applyBudget(nextBudgetState(this.budget, { type: "caller_spoke" }));
 
     if (containsAbuse(text)) {
+      this.deps.metrics.guardrailTriggers.inc({ type: "abuse" });
       const decision = nextBudgetState(this.budget, { type: "abuse_detected" });
       this.budget = decision.state;
       if (decision.decision.action === "end") {
@@ -305,6 +310,7 @@ export class CallSession {
         });
       },
       onError: (error) => {
+        this.deps.metrics.providerRequests.inc({ provider: "elevenlabs", kind: "tts", result: "error" });
         this.log().error({ err: error }, "tts error mid-turn");
         void this.transferFallback("speech synthesis failed");
       },
@@ -334,6 +340,11 @@ export class CallSession {
           },
         });
         timer.markLlmCompleted();
+        this.deps.metrics.providerRequests.inc({
+          provider: this.deps.env.AGENT_MODEL,
+          kind: "llm",
+          result: "ok",
+        });
         this.tokenUsage = addTokenUsage(this.tokenUsage, result.usage);
         this.messages.push({ role: "assistant", content: result.assistantContent });
 
@@ -389,6 +400,11 @@ export class CallSession {
       }
     } catch (error) {
       if (signal.aborted) return; // barge-in or shutdown — the new turn owns the call now
+      this.deps.metrics.providerRequests.inc({
+        provider: this.deps.env.AGENT_MODEL,
+        kind: "llm",
+        result: "error",
+      });
       this.log().error({ err: error }, "llm turn failed");
       tts.sendText(phrase(this.language, "failureApology"));
       const decision = nextBudgetState(this.budget, { type: "tool_failure" });
@@ -419,6 +435,7 @@ export class CallSession {
     // Guardrail: every rupee amount spoken must trace to DB/tool facts.
     const unauthorized = findUnauthorizedAmounts(agentText, this.allowedAmounts);
     if (unauthorized.length > 0) {
+      this.deps.metrics.guardrailTriggers.inc({ type: "unauthorized_amount" });
       this.log().warn(
         { unauthorized, turnIndex: agentTurnIndex },
         "guardrail: agent spoke amounts not present in prompt or tool results",
@@ -427,6 +444,7 @@ export class CallSession {
 
     const metrics = timer.finish();
     this.agentTurnMetrics.push(metrics);
+    this.observeTurnLatency(metrics);
     this.recordTurn({
       role: "agent",
       text: agentText,
@@ -477,6 +495,7 @@ export class CallSession {
     const apiResult = await this.runDbTool(tool, toolUseId, agentTurnIndex);
     const durationMs = Date.now() - startedAt;
     const ok = apiResult.ok;
+    this.deps.metrics.toolCalls.inc({ tool: tool.name, result: ok ? "ok" : "error" });
     this.applyBudget(nextBudgetState(this.budget, { type: ok ? "tool_success" : "tool_failure" }));
     this.publish({ type: "call.tool", name: tool.name, ok });
 
@@ -630,6 +649,7 @@ export class CallSession {
           });
         },
         onError: (error) => {
+          this.deps.metrics.providerRequests.inc({ provider: "elevenlabs", kind: "tts", result: "error" });
           this.log().error({ err: error }, "tts error on canned speech");
           after();
           resolve();
@@ -697,7 +717,23 @@ export class CallSession {
   private applyBudget(result: { state: CallBudgetState; decision: BudgetDecision }): void {
     this.budget = result.state;
     if (result.decision.action === "transfer") {
+      this.deps.metrics.guardrailTriggers.inc({ type: "budget_transfer" });
       void this.doTransfer(result.decision.reason);
+    }
+  }
+
+  /** Record each present turn-latency stage into the Prometheus histogram. */
+  private observeTurnLatency(m: TurnMetrics): void {
+    const stages: Array<readonly [number | undefined, TurnStage]> = [
+      [m.sttEndpointMs, "stt_endpoint"],
+      [m.llmTtftMs, "llm_ttft"],
+      [m.llmTotalMs, "llm_total"],
+      [m.toolMs, "tool"],
+      [m.ttsTtfbMs, "tts_ttfb"],
+      [m.turnTotalMs, "turn_total"],
+    ];
+    for (const [ms, stage] of stages) {
+      if (ms !== undefined) observeTurnStage(this.deps.metrics, stage, ms);
     }
   }
 
@@ -820,6 +856,9 @@ export class CallSession {
     await this.stt?.close().catch(() => undefined);
 
     const outcome = this.computeOutcome();
+    // The call context does not carry direction; almost all sessions are inbound.
+    // Outbound-callback attribution can be threaded through later if it matters.
+    this.deps.metrics.callsTotal.inc({ direction: "inbound", outcome });
     const durationSec = Math.round((Date.now() - this.startedAtMs) / 1000);
     const pricing = pricingForModel(this.deps.env.AGENT_MODEL);
     const llmPaise = pricing ? computeLlmCostPaise(this.tokenUsage, pricing) : undefined;

@@ -159,6 +159,9 @@ importers:
       '@vaanidesk/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@vaanidesk/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@vaanidesk/shared':
         specifier: workspace:*
         version: link:../../packages/shared

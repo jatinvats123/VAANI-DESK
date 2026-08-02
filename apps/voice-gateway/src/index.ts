@@ -1,3 +1,4 @@
+import { createMetrics } from "@vaanidesk/observability";
 import { config } from "dotenv";
 import { Redis } from "ioredis";
 import { InternalApiClient } from "./api-client.js";
@@ -17,10 +18,12 @@ function main(): void {
   const redis = new Redis(env.REDIS_URL);
   const api = new InternalApiClient(env.API_BASE_URL, env.INTERNAL_SERVICE_SECRET);
   const llm = createAnthropicClient({ apiKey: env.ANTHROPIC_API_KEY, model: env.AGENT_MODEL });
+  const metrics = createMetrics("voice-gateway");
 
   const gateway = createGatewayServer({
     env,
     log,
+    metrics,
     api,
     publishRaw: (channel, message) => {
       redis.publish(channel, message).catch((error: unknown) => {

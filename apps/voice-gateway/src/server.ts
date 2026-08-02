@@ -1,5 +1,6 @@
 import http from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
+import { bearerMatches, renderMetrics, type VaaniMetrics } from "@vaanidesk/observability";
 import { liveCallsChannel, serializeLiveCallEvent, type LiveCallEvent } from "@vaanidesk/shared";
 import type { InternalApiClient } from "./api-client.js";
 import { CallSession, newConnectionId, type SessionDeps } from "./call/session.js";
@@ -13,6 +14,7 @@ import { extractStreamStart, parseTwilioMessage } from "./telephony/twilio-media
 export interface GatewayDeps {
   env: Env;
   log: Logger;
+  metrics: VaaniMetrics;
   api: InternalApiClient;
   /** Publishes a serialized live event onto a Redis channel. */
   publishRaw: (channel: string, message: string) => void;
@@ -39,6 +41,18 @@ export function createGatewayServer(deps: GatewayDeps): GatewayServer {
     if (req.url === "/healthz") {
       res.writeHead(draining ? 503 : 200, { "content-type": "application/json" });
       res.end(JSON.stringify({ status: draining ? "draining" : "ok", activeCalls: sessions.size }));
+      return;
+    }
+    if (req.url === "/metrics") {
+      // Guarded by the internal service secret — metrics reveal call volumes.
+      if (!bearerMatches(req.headers.authorization, env.INTERNAL_SERVICE_SECRET)) {
+        res.writeHead(401).end("unauthorized");
+        return;
+      }
+      void renderMetrics(deps.metrics.registry).then(({ contentType, body }) => {
+        res.writeHead(200, { "content-type": contentType });
+        res.end(body);
+      });
       return;
     }
     res.writeHead(404).end();
@@ -81,6 +95,7 @@ export function createGatewayServer(deps: GatewayDeps): GatewayServer {
               const context = await deps.api.getCallContext(provider, start.providerCallSid);
               const sessionDeps: SessionDeps = {
                 env,
+                metrics: deps.metrics,
                 log: connLog,
                 api: deps.api,
                 publish: (event: LiveCallEvent) =>
@@ -98,6 +113,7 @@ export function createGatewayServer(deps: GatewayDeps): GatewayServer {
               };
               const created = new CallSession(sessionDeps, context, start.streamSid);
               sessions.add(created);
+              deps.metrics.callsInFlight.set(sessions.size);
               session = created;
               await created.begin();
               for (const frame of queuedMedia) created.onMediaPayload(frame);
@@ -134,7 +150,10 @@ export function createGatewayServer(deps: GatewayDeps): GatewayServer {
       connLog.info("media stream closed");
       if (session) {
         const closing = session;
-        void closing.onSocketClosed().finally(() => sessions.delete(closing));
+        void closing.onSocketClosed().finally(() => {
+          sessions.delete(closing);
+          deps.metrics.callsInFlight.set(sessions.size);
+        });
       }
     });
 
