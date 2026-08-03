@@ -87,6 +87,11 @@ export async function createBooking(
   const outcome = await tenant.transaction(async (tx) => {
     await tx.acquireBookingWriteLock();
 
+    // Idempotency replay: if this key already booked, return that booking without
+    // re-running availability (the slot is legitimately held by this same booking).
+    const replay = await tx.bookings.findByIdempotencyKey(request.idempotencyKey);
+    if (replay) return { booking: replay, created: false } as const;
+
     const bufferMs = business.bookingBufferMin * MS_PER_MINUTE;
     const busy = await tx.bookings.listCapacityHolding(
       new Date(startsAt.getTime() - bufferMs),

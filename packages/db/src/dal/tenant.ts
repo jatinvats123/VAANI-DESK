@@ -285,6 +285,18 @@ function createTenantRepos(db: DbExecutor, businessId: string) {
         return { booking, created: false };
       },
 
+      /** Existing booking for an idempotency key, if any — lets callers short-
+       * circuit a replay before running availability checks (which would other-
+       * wise see the slot held by the first, identical booking and reject it). */
+      async findByIdempotencyKey(idempotencyKey: string): Promise<Booking | undefined> {
+        const rows = await db
+          .select()
+          .from(bookings)
+          .where(and(eq(bookings.businessId, businessId), eq(bookings.idempotencyKey, idempotencyKey)))
+          .limit(1);
+        return rows[0];
+      },
+
       /** Bookings overlapping [fromUtc, toUtc) that hold capacity — engine input. */
       async listCapacityHolding(fromUtc: Date, toUtc: Date): Promise<BusyPeriod[]> {
         const rows = await db

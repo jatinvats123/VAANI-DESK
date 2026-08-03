@@ -19,7 +19,7 @@
   "dependencies": {
     "@vaanidesk/core": "workspace:*",
     "@vaanidesk/shared": "workspace:*",
-    "drizzle-orm": "catalog:",
+    "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.7",
     "zod": "catalog:"
   },
