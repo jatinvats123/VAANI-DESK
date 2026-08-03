@@ -108,6 +108,30 @@ so it exercises both real providers).
 > written for a faster/paid model; on the free tier the demo will feel slower than the budget targets.
 > This is a real finding, not a failure of the pipeline.
 
+### Full-pipeline turn latency, real gateway (2026-08-03) — Path B
+
+The **entire gateway pipeline** exercised end to end over Twilio's Media Streams protocol **without
+Twilio** (a client speaks the wire protocol to `/stream`): a synthesized μ-law caller line → real
+Deepgram STT → real Gemini (which correctly called `check_availability`) → real ElevenLabs TTS, on a
+real DB call record, read from the gateway's own `vd_turn_latency_seconds`. **3 turns.** Only Twilio's
+PSTN transport is absent (blocked — see below).
+
+| Stage (gateway metric) | Meaning                              | Measured (3 turns) |
+| ---------------------- | ------------------------------------ | ------------------ |
+| `llm_ttft`             | Gemini time-to-first-token           | **~1.0–1.4 s** ← dominant |
+| `tts_ttfb`             | ElevenLabs time-to-first-audio-byte  | **~0.22–0.27 s**   |
+| `tool`                 | `check_availability` → api round-trip | **~0.04–0.07 s**   |
+| `turn_total`           | utterance-end → first agent audio    | **~1.3–1.5 s**     |
+| `llm_total`            | full LLM incl. tool round            | **~1.9–2.2 s**     |
+| voice-to-voice (client-observed) | caller stops → first agent audio, incl. ~1 s endpointing | **2768 / 3277 / 3193 ms** |
+
+Reproduce: `apps/voice-gateway` → `pnpm exec tsx simulate-call.mts` (needs the api + gateway running
+and the number onboarded via `packages/db` → `onboard-demo-number.mts`).
+
+> **`turn_total` ~1.3–1.5 s slightly exceeds the p50 ≤ 1.2 s budget**, almost entirely because of
+> free-tier Gemini's ~1 s TTFT — everything else (STT, TTS ~0.25 s, tool ~0.05 s) is well within
+> budget. A faster/paid LLM would bring it under. This is the real, honest read of the pipeline.
+
 ---
 
 ## Not yet measured — `TODO(measure-required)`
@@ -120,16 +144,17 @@ impractically slow in one sitting. How to get it: run the **nightly** workflow (
 time, and record the baseline the CI gate compares against. This also unblocks
 [RUNBOOK.md](RUNBOOK.md)'s eval-baseline line.
 
-### End-to-end voice-to-voice latency (the full 6-stage turn, live)
+### Live (over-PSTN) voice-to-voice latency
 
-Component stages are now measured individually (LLM, TTS, STT — see the per-stage table above). What
-is still `TODO(measure-required)` is the **live** voice-to-voice number: caller end-of-speech → first
-audio byte, measured through the running gateway on a real call, i.e. the actual `turn_total` with
-real network/telephony transport and barge-in. Why: that requires a real inbound call over Twilio
-(see the blockers below), not just the providers in isolation. How to get it: run demo path **B** in
-[DEMO.md](DEMO.md); the gateway records every stage into `call_turns.metrics` and exposes
-`vd_turn_latency_seconds` on `/metrics` (Phase 3) — the Grafana "Turn latency p50/p95 by stage"
-panel then shows real distributions.
+The full pipeline turn latency **is now measured** through the real gateway (see the Path B table
+above). What remains `TODO(measure-required)` is only the **live-over-Twilio** number — the same turn
+plus real PSTN/telephony transport and codec — which adds network delay on top of the measured
+`turn_total`. Why still open: bidirectional Twilio **Media Streams (`<Connect><Stream>`) does not
+execute on this fresh restricted trial** — the webhook + TwiML are proven working (the caller heard a
+`<Say>` test), but Twilio never opens the audio WebSocket (0 `/stream` attempts) and every Twilio
+error endpoint is 401 (the same `20003` policy). How to get it: verify/upgrade the Twilio account to
+unlock bidirectional Media Streams, then dial — the stack is already wired (DEMO.md path B) and
+records `vd_turn_latency_seconds` on `/metrics`.
 
 ### Telephony + STT/TTS cost per call
 
