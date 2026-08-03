@@ -93,6 +93,22 @@ describe("fromGeminiParts", () => {
     const toolBlock = result.assistantContent.find((b) => b.type === "tool_use");
     expect(toolBlock).toMatchObject({ type: "tool_use", name: "create_booking" });
   });
+
+  it("round-trips a thinking model's thought_signature through history", () => {
+    // Model returns a functionCall carrying a signature...
+    const first = fromGeminiParts([
+      { functionCall: { name: "check_availability", args: {} }, thoughtSignature: "sig-abc" },
+    ]);
+    const toolBlock = first.assistantContent.find((b) => b.type === "tool_use");
+    expect(toolBlock).toMatchObject({ thoughtSignature: "sig-abc" });
+
+    // ...and it must reappear on the functionCall when we send history back.
+    const contents = toGeminiContents([{ role: "assistant", content: first.assistantContent }]);
+    expect(contents[0]?.parts[0]).toMatchObject({
+      functionCall: { name: "check_availability" },
+      thoughtSignature: "sig-abc",
+    });
+  });
 });
 
 describe("classifyGeminiError", () => {
