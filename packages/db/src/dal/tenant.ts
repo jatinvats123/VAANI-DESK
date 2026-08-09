@@ -565,6 +565,10 @@ function createTenantRepos(db: DbExecutor, businessId: string) {
       async dailySeries(fromUtc: Date, toUtc: Date, timeZone: string) {
         const callDay = sql<string>`to_char(timezone(${timeZone}, ${calls.startedAt}), 'YYYY-MM-DD')`;
         const bookingDay = sql<string>`to_char(timezone(${timeZone}, ${bookings.createdAt}), 'YYYY-MM-DD')`;
+        // Group by the select-column ordinal (day = column 1): reusing the sql
+        // expression in GROUP BY re-parameterizes it (different $n + column
+        // qualification), which Postgres won't match to the SELECT expression.
+        const byDay = sql`1`;
         const [callRows, bookingRows] = await Promise.all([
           db
             .select({ day: callDay, count: sql<number>`count(*)::int` })
@@ -576,7 +580,7 @@ function createTenantRepos(db: DbExecutor, businessId: string) {
                 lt(calls.startedAt, toUtc),
               ),
             )
-            .groupBy(callDay),
+            .groupBy(byDay),
           db
             .select({
               day: bookingDay,
@@ -591,7 +595,7 @@ function createTenantRepos(db: DbExecutor, businessId: string) {
                 lt(bookings.createdAt, toUtc),
               ),
             )
-            .groupBy(bookingDay),
+            .groupBy(byDay),
         ]);
         return { callRows, bookingRows };
       },
