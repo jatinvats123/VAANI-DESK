@@ -115,8 +115,16 @@ jobs:
       # Next 16 (a Turbopack-build migration we haven't taken), plus its bundled
       # sharp/postcss/nanoid toolchain — not fixable at the app level without that
       # major upgrade. Reviewed and tracked; run `pnpm audit --prod` to see them.
-      - name: Audit production dependencies
-        run: pnpm audit --prod --audit-level critical
+      # Gate on the critical count from JSON — pnpm's own `--audit-level` exit
+      # code is inconsistent across environments.
+      - name: Audit production dependencies (fail on critical)
+        run: |
+          pnpm audit --prod --json > audit-report.json || true
+          CRIT=$(node -p "(JSON.parse(require('fs').readFileSync('audit-report.json','utf8')).metadata.vulnerabilities.critical) || 0")
+          echo "Critical advisories: $CRIT"
+          if [ "$CRIT" -ne 0 ]; then
+            echo "::error::$CRIT critical advisories found"; exit 1
+          fi
 
   evals:
     name: Agent evals (gate vs main)
