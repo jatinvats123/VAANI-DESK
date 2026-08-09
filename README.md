@@ -31,6 +31,22 @@ The agent operates under hard guardrails: **prices and slots come only from the 
 booking is only ever spoken as confirmed after the `create_booking` tool succeeds.** Full detail
 in [docs/architecture.md](docs/architecture.md), decision records in [docs/adr/](docs/adr/).
 
+## What it looks like
+
+The owner dashboard (Next.js 15) — real-time live-call panel, bookings, and a 14-day analytics
+overview, all tenant-scoped. Every screen is covered by the Playwright happy-path suite.
+
+![Dashboard overview](docs/screenshots/dashboard.png)
+
+<details>
+<summary>More screens — bookings &amp; settings</summary>
+
+![Bookings](docs/screenshots/bookings.png)
+
+![Settings](docs/screenshots/settings.png)
+
+</details>
+
 ## Workspace map
 
 | Path                 | What it is                                                           |
