@@ -161,7 +161,7 @@ jobs:
       - name: Run scenario suite with pass-rate gate
         if: steps.secrets.outputs.available == 'true'
         run: >
-          pnpm --filter @vaanidesk/evals run --
+          pnpm --filter @vaanidesk/evals exec tsx src/cli.ts
           --trigger ci --gate
           --git-sha "$GITHUB_SHA"
           --git-branch "${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"

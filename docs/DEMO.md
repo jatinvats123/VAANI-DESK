@@ -19,7 +19,7 @@ Two ways to see VaaniDesk work, depending on what credentials you have.
 
 ```bash
 # .env: LLM_PROVIDER=gemini, GEMINI_API_KEY=..., AGENT_MODEL=gemini-flash-lite-latest
-pnpm --filter @vaanidesk/evals run -- --filter hinglish-basic-booking --no-db
+pnpm --filter @vaanidesk/evals exec tsx src/cli.ts --filter hinglish-basic-booking --no-db
 ```
 
 This runs a scripted caller against the real model with the production system prompt, tools, and

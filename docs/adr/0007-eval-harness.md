@@ -49,7 +49,7 @@ No baseline yet → gate passes with a notice (bootstrapping).
 
 ## Consequences
 
-- `pnpm --filter @vaanidesk/evals run -- --trigger ci --gate` is the single CI entry point;
+- `pnpm --filter @vaanidesk/evals exec tsx src/cli.ts --trigger ci --gate` is the single CI entry point;
   cost per full run is logged in paise and stored per case.
 - Executor and assertion evaluator are pure and unit-tested — harness bugs don't masquerade as
   agent regressions.
