@@ -30,6 +30,18 @@ Free-tier caveat: Gemini free tier is rate-limited (~15–30 requests/min), so e
 wait out a per-minute window — a single scenario can take several minutes, and the full 30-scenario
 suite is best run in CI/nightly (see [MEASUREMENTS.md](MEASUREMENTS.md)).
 
+### Run the full suite in CI
+
+The **Nightly evals** workflow and the **Agent evals** job in CI run the suite only when an LLM key is
+configured as an Actions secret; without one they skip with a warning.
+
+1. Add `GEMINI_API_KEY` (or `ANTHROPIC_API_KEY`) under Settings → Secrets and variables → Actions,
+   or run `gh secret set GEMINI_API_KEY`.
+2. Optional: add `EVALS_DATABASE_URL` (any Postgres, e.g. a Neon branch) to store runs. Without it the
+   pass rate is printed but not stored, and the PR gate has no main baseline to compare against.
+3. Run **Nightly evals** from the Actions tab (or `gh workflow run "Nightly evals"`). The log ends
+   with `N/30 passed`.
+
 ---
 
 ## B. Live phone call (full pipeline)
