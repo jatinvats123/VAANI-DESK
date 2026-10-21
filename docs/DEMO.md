@@ -19,7 +19,7 @@ Two ways to see VaaniDesk work, depending on what credentials you have.
 
 ```bash
 # .env: LLM_PROVIDER=gemini, GEMINI_API_KEY=..., AGENT_MODEL=gemini-flash-lite-latest
-pnpm --filter @vaanidesk/evals run -- --filter hinglish-basic-booking --no-db
+pnpm --filter @vaanidesk/evals exec tsx src/cli.ts --filter hinglish-basic-booking --no-db
 ```
 
 This runs a scripted caller against the real model with the production system prompt, tools, and
@@ -29,6 +29,18 @@ guardrails, then prints the verdict, the LLM cost, and (with the judge) a 0–1 
 Free-tier caveat: Gemini free tier is rate-limited (~15–30 requests/min), so each scripted turn may
 wait out a per-minute window — a single scenario can take several minutes, and the full 30-scenario
 suite is best run in CI/nightly (see [MEASUREMENTS.md](MEASUREMENTS.md)).
+
+### Run the full suite in CI
+
+The **Nightly evals** workflow and the **Agent evals** job in CI run the suite only when an LLM key is
+configured as an Actions secret; without one they skip with a warning.
+
+1. Add `GEMINI_API_KEY` (or `ANTHROPIC_API_KEY`) under Settings → Secrets and variables → Actions,
+   or run `gh secret set GEMINI_API_KEY`.
+2. Optional: add `EVALS_DATABASE_URL` (any Postgres, e.g. a Neon branch) to store runs. Without it the
+   pass rate is printed but not stored, and the PR gate has no main baseline to compare against.
+3. Run **Nightly evals** from the Actions tab (or `gh workflow run "Nightly evals"`). The log ends
+   with `N/30 passed`.
 
 ---
 

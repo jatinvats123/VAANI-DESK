@@ -74,7 +74,7 @@ the eval harness (`packages/evals`):
 ### Scenario result (validated live, 2026-08-02)
 
 Single representative scenario, `hinglish-basic-booking`, `--no-db`
-(`pnpm --filter @vaanidesk/evals run -- --filter hinglish-basic-booking --no-db`):
+(`pnpm --filter @vaanidesk/evals exec tsx src/cli.ts --filter hinglish-basic-booking --no-db`):
 
 - verdict: **pass**
 - judge score (0–1): **1.00** (LLM-as-judge, also on Gemini)

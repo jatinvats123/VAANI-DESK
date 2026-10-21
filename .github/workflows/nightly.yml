@@ -29,17 +29,24 @@ jobs:
         id: secrets
         run: |
           # Same provider preference as ci.yml (ADR-0009): Gemini if keyed, else Anthropic.
+          # Skip cleanly when neither key is configured instead of failing every night.
           if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
             echo "provider=gemini" >> "$GITHUB_OUTPUT"
             echo "model=gemini-flash-lite-latest" >> "$GITHUB_OUTPUT"
-          else
+          elif [ -n "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
             echo "provider=anthropic" >> "$GITHUB_OUTPUT"
             echo "model=claude-haiku-4-5-20251001" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No LLM key (GEMINI_API_KEY or ANTHROPIC_API_KEY) configured — nightly evals skipped."
           fi
 
       - name: Run full suite (records the main baseline the CI gate compares against)
+        if: steps.secrets.outputs.available == 'true'
         run: >
-          pnpm --filter @vaanidesk/evals run --
+          pnpm --filter @vaanidesk/evals exec tsx src/cli.ts
           --trigger nightly
           --git-sha "$GITHUB_SHA"
           --git-branch main

@@ -82,7 +82,7 @@ issue (bad token, Redis, S3). Check `webhook_events` / `audit_log` for the reaso
 **Affects:** revenue and the customer's ROI story.
 **Diagnose:**
 1. Did a prompt/model/config change ship? Correlate with deploy time.
-2. Run the eval suite (`pnpm --filter @vaanidesk/evals run`) — has the pass rate regressed?
+2. Run the eval suite (`pnpm --filter @vaanidesk/evals exec tsx src/cli.ts`) — has the pass rate regressed?
    (The suite now runs against a real model on Gemini's free tier; the pass-rate baseline is
    recorded by the nightly workflow — see [MEASUREMENTS.md](MEASUREMENTS.md).)
 3. Check `vd_guardrail_triggers_total` — a spike in `unauthorized_amount` or `budget_transfer`

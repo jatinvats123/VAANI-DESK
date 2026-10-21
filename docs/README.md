@@ -49,7 +49,7 @@ pnpm --filter @vaanidesk/workers dev        # background jobs
 pnpm lint && pnpm typecheck && pnpm test    # 27 tasks, 173 unit tests
 pnpm --filter @vaanidesk/api test:integration   # needs Docker
 pnpm --filter @vaanidesk/web e2e                # Playwright
-pnpm --filter @vaanidesk/evals run -- --no-db   # 30 AI scenarios (needs ANTHROPIC_API_KEY)
+pnpm --filter @vaanidesk/evals exec tsx src/cli.ts --no-db   # 30 AI scenarios (needs ANTHROPIC_API_KEY)
 ```
 
 **The five files worth reading first**
