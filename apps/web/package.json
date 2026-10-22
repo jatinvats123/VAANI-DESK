@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.3",
-    "@sentry/nextjs": "^10.69.0",
+    "@sentry/nextjs": "^10.76.2",
     "@vaanidesk/core": "workspace:*",
     "@vaanidesk/db": "workspace:*",
     "@vaanidesk/shared": "workspace:*",
