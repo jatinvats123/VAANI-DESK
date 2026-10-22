@@ -106,10 +106,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
+      # No `cache: pnpm` here: this job never installs, so after a lockfile change
+      # there is no store to save and setup-node's post step fails the job.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
       # Hard-gate on `critical` (currently zero). The remaining `high` advisories
       # are all transitive framework internals — Next.js DoS/SSRF fixed only in
       # Next 16 (a Turbopack-build migration we haven't taken), plus its bundled
